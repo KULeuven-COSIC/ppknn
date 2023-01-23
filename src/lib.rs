@@ -19,13 +19,15 @@ where
 
     fn sort_rec(&mut self, lo: usize, n: usize) {
         if n > 1 {
-            let m = n/2;
+            let m = n / 2;
             self.sort_rec(lo, m);
             self.sort_rec(lo + m, m);
             self.merge_rec(lo, n, 1);
         }
     }
 
+    /// We assume the two arrays we wish to merge are consecutive,
+    /// has length `n` and start at index `lo`.
     pub fn merge_rec(&mut self, lo: usize, n: usize, r: usize) {
         let m = r * 2;
         if m < n {
@@ -40,6 +42,7 @@ where
     }
 }
 
+/// Swap in-place an elements at index `i` with another at index `j`
 fn compare_at<T>(vs: &mut Vec<T>, i: usize, j: usize)
 where
     T: Ord,
