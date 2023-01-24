@@ -70,17 +70,18 @@ where
     }
     */
 
+    /// We assume the two sorted arrays we wish to merge are consecutive,
+    /// the second one has length n/2 and the first one has n - n/2.
+    /// So if the length is odd then the first array is smaller.
     pub fn merge(&mut self) {
-        let n = self.vs.len() / 2;
-        let m = self.vs.len() - n;
+        let m = self.vs.len() / 2;
+        let n = self.vs.len() - m;
 
         let ix: Vec<_> = (0..n).collect();
-        let jx: Vec<_> = (n..n+m).collect();
+        let jx: Vec<_> = (n..n + m).collect();
         self.merge_rec(&ix, &jx)
     }
 
-    /// We assume the two sorted arrays we wish to merge are consecutive,
-    /// has length `n` and start at index `lo`.
     fn merge_rec(&mut self, ix: &[usize], jx: &[usize]) {
         println!("[merge begin] ix={:?}, jx={:?}", ix, jx);
         let nm = ix.len() * jx.len();
@@ -101,10 +102,10 @@ where
             } else {
                 tmp
             };
-            println!("w_max={}", w_max);
             for i in 0..w_max {
                 self.compare_at(odd_all[i], even_all[i + 1]);
             }
+            // TODO the final v1, w1, ... step might not be implemented
         } else if nm == 1 {
             self.compare_at(ix[0], jx[0]);
         } else {
@@ -218,6 +219,13 @@ mod test {
     }
 
     #[test]
+    fn test_merge_3() {
+        let mut batcher = BatcherSort::new(vec![1, 5, 2]);
+        batcher.merge();
+        assert_eq!(vec![1, 2, 5], batcher.vs);
+    }
+
+    #[test]
     fn test_merge_4() {
         {
             let mut batcher = BatcherSort::new(vec![1, 5, 2, 4]);
@@ -229,6 +237,14 @@ mod test {
             // batcher.merge_k();
             // assert_eq!(vec![1], batcher.vs);
         }
+    }
+
+    #[test]
+    fn test_merge_5() {
+        // TODO broken because the last step v1, w1, v2, w2 is not implemented
+        let mut batcher = BatcherSort::new(vec![1, 5, 6, 2, 4]);
+        batcher.merge();
+        assert_eq!(vec![1, 2, 4, 5, 6], batcher.vs);
     }
 
     #[test]
