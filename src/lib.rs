@@ -119,7 +119,7 @@ where
                     jx.len() - 1
                 };
                 for i in (0..end).step_by(2) {
-                    self.vs.swap(jx[i], jx[i+1]);
+                    self.vs.swap(jx[i], jx[i + 1]);
                 }
             }
         } else if nm == 1 {
@@ -317,7 +317,7 @@ mod test {
             assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs);
         }
         {
-            let mut batcher = BatcherSort::new(vec![7,6,5,4,3,2,1]);
+            let mut batcher = BatcherSort::new(vec![7, 6, 5, 4, 3, 2, 1]);
             batcher.sort();
             assert_eq!(vec![1, 2, 3, 4, 5, 6, 7], batcher.vs);
         }
