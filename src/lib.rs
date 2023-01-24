@@ -70,12 +70,16 @@ where
     }
     */
 
-    /// We assume the two sorted arrays we wish to merge are consecutive,
-    /// the first one has length n/2 (always even) and the second one has n - n/2.
-    /// So if the length is odd then the first array is smaller.
+    /// We assume the two sorted arrays we wish to merge are consecutive of length n+m,
+    /// the first one has length `n` that's always even and the second one has `m`.
     pub fn merge(&mut self) {
-        let n = self.vs.len() / 2;
-        let m = self.vs.len() - n;
+        let mut n = self.vs.len() / 2;
+        let mut m = self.vs.len() - n;
+
+        // make sure n is even
+        if n % 2 == 1 {
+            std::mem::swap(&mut n, &mut m);
+        }
 
         let ix: Vec<_> = (0..n).collect();
         let jx: Vec<_> = (n..n + m).collect();
@@ -107,10 +111,16 @@ where
             }
 
             // the final output is v1, w1, v2, w2...
-            // there's a special case for length 3 so we need to swap the values in w1 with v2
-            // is this the only special case if even_all.len() is even?
-            if odd_all.len() + even_all.len() == 3 {
-                self.vs.swap(odd_all[0], even_all[1])
+            // correction needed if `|ix|` is odd
+            if ix.len() % 2 == 1 {
+                let end = if jx.len() % 2 == 0 {
+                    jx.len()
+                } else {
+                    jx.len() - 1
+                };
+                for i in (0..end).step_by(2) {
+                    self.vs.swap(jx[i], jx[i+1]);
+                }
             }
         } else if nm == 1 {
             self.compare_at(ix[0], jx[0]);
@@ -247,7 +257,6 @@ mod test {
 
     #[test]
     fn test_merge_5() {
-        // TODO broken because the last step v1, w1, v2, w2 is not implemented
         let mut batcher = BatcherSort::new(vec![1, 5, 6, 2, 4]);
         batcher.merge();
         assert_eq!(vec![1, 2, 4, 5, 6], batcher.vs);
@@ -306,6 +315,11 @@ mod test {
             let mut batcher = BatcherSort::new(vec![5, 4, 3, 2, 1]);
             batcher.sort();
             assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs);
+        }
+        {
+            let mut batcher = BatcherSort::new(vec![7,6,5,4,3,2,1]);
+            batcher.sort();
+            assert_eq!(vec![1, 2, 3, 4, 5, 6, 7], batcher.vs);
         }
         {
             let mut batcher = BatcherSort::new(vec![1, 5, 6, 7, 2, 4, 3, 5]);
