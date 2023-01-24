@@ -71,11 +71,11 @@ where
     */
 
     /// We assume the two sorted arrays we wish to merge are consecutive,
-    /// the second one has length n/2 and the first one has n - n/2.
+    /// the first one has length n/2 (always even) and the second one has n - n/2.
     /// So if the length is odd then the first array is smaller.
     pub fn merge(&mut self) {
-        let m = self.vs.len() / 2;
-        let n = self.vs.len() - m;
+        let n = self.vs.len() / 2;
+        let m = self.vs.len() - n;
 
         let ix: Vec<_> = (0..n).collect();
         let jx: Vec<_> = (n..n + m).collect();
@@ -105,7 +105,13 @@ where
             for i in 0..w_max {
                 self.compare_at(odd_all[i], even_all[i + 1]);
             }
-            // TODO the final v1, w1, ... step might not be implemented
+
+            // the final output is v1, w1, v2, w2...
+            // there's a special case for length 3 so we need to swap the values in w1 with v2
+            // is this the only special case if even_all.len() is even?
+            if odd_all.len() + even_all.len() == 3 {
+                self.vs.swap(odd_all[0], even_all[1])
+            }
         } else if nm == 1 {
             self.compare_at(ix[0], jx[0]);
         } else {
@@ -295,6 +301,11 @@ mod test {
             let mut batcher = BatcherSort::new(vec![5, 1, 6, 2]);
             batcher.sort();
             assert_eq!(vec![1, 2, 5, 6], batcher.vs);
+        }
+        {
+            let mut batcher = BatcherSort::new(vec![5, 4, 3, 2, 1]);
+            batcher.sort();
+            assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs);
         }
         {
             let mut batcher = BatcherSort::new(vec![1, 5, 6, 7, 2, 4, 3, 5]);
