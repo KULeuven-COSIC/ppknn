@@ -34,9 +34,11 @@ where
         self.sort_rec(0, self.vs.len());
     }
 
+    /*
     pub fn sort_k(&mut self) {
         self.sort_k_rec(0, self.vs.len());
     }
+    */
 
     fn sort_rec(&mut self, lo: usize, n: usize) {
         println!("[sort_rec begin] lo={}, n={}", lo, n);
@@ -44,11 +46,14 @@ where
             let m = n / 2;
             self.sort_rec(lo, m);
             self.sort_rec(lo + m, m);
-            self.merge(lo, n, 1);
+
+            let indices: Vec<_> = (lo..lo + n).collect();
+            self.merge(&indices);
         }
         println!("[sort_rec exit] lo={}, n={}", lo, n);
     }
 
+    /*
     fn sort_k_rec(&mut self, lo: usize, n: usize) {
         println!("[sort_k_rec begin] lo={}, n={}", lo, n);
         if n > 1 {
@@ -61,24 +66,36 @@ where
         }
         println!("[sort_k_rec exit] lo={}, n={}", lo, n);
     }
+    */
 
     /// We assume the two sorted arrays we wish to merge are consecutive,
     /// has length `n` and start at index `lo`.
-    pub fn merge(&mut self, lo: usize, n: usize, r: usize) {
-        println!("[merge begin] lo={}, n={}, r={}", lo, n, r);
-        let m = r * 2;
-        if m < n {
-            self.merge(lo, n, m);
-            self.merge(lo + r, n, m);
-            for i in (lo + r..lo + n - r).step_by(m) {
-                self.compare_at(i, i + r);
+    pub fn merge(&mut self, indices: &[usize]) {
+        println!("[merge begin] indices={:?}", indices);
+        if indices.len() > 2 {
+            let even_indices = self.even_indices(&indices);
+            let odd_indices = self.odd_indices(&indices);
+            self.merge(&even_indices);
+            self.merge(&odd_indices);
+
+            let tmp = ((even_indices.len() as f64 / 2f64).floor()
+                + (odd_indices.len() as f64 / 2f64).floor()) as usize;
+            let w_max = if even_indices.len() % 2 == 0 && odd_indices.len() % 2 == 0 {
+                tmp - 1
+            } else {
+                tmp
+            };
+            println!("w_max={}", w_max);
+            for i in 0..w_max {
+                self.compare_at(odd_indices[i], even_indices[i + 1]);
             }
         } else {
-            self.compare_at(lo, lo + r);
+            self.compare_at(indices[0], indices[1]);
         }
-        println!("[merge exit] lo={}, n={}, r={}", lo, n, r);
+        println!("[merge exit] indices={:?}", indices);
     }
 
+    /*
     /// We assume the two arrays we wish to merge are consecutive,
     /// has length `n` and start at index `lo`.
     /// Only the first `k` elements in the two arrays
@@ -133,6 +150,7 @@ where
         self.vs.truncate(k);
         println!("[merge_k exit] lo={}, n={}, r={}", lo, n, r);
     }
+    */
 
     /// Swap in-place an elements at index `i` with another at index `j`
     fn compare_at(&mut self, i: usize, j: usize) {
@@ -146,6 +164,21 @@ where
     pub fn comparisons(&self) -> usize {
         self.comp_count
     }
+
+    fn odd_indices(&self, indices: &[usize]) -> Vec<usize> {
+        let new_indices = indices.split_first().unwrap().1;
+        self.even_indices(new_indices)
+    }
+
+    fn even_indices(&self, indices: &[usize]) -> Vec<usize> {
+        let mut out = vec![];
+        for i in (0..indices.len()).step_by(2) {
+            if i < self.k {
+                out.push(indices[i]);
+            }
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -156,13 +189,13 @@ mod test {
     fn test_merge_2() {
         {
             let mut batcher = BatcherSort::new(vec![2, 1]);
-            batcher.merge(0, 2, 1);
+            batcher.merge(&[0, 1]);
             assert_eq!(vec![1, 2], batcher.vs);
         }
         {
-            let mut batcher = BatcherSort::new_k(vec![2, 1], 1);
-            batcher.merge_k();
-            assert_eq!(vec![1], batcher.vs);
+            // let mut batcher = BatcherSort::new_k(vec![2, 1], 1);
+            // batcher.merge_k();
+            // assert_eq!(vec![1], batcher.vs);
         }
     }
 
@@ -170,13 +203,13 @@ mod test {
     fn test_merge_4() {
         {
             let mut batcher = BatcherSort::new(vec![1, 5, 2, 4]);
-            batcher.merge(0, 4, 1);
+            batcher.merge(&[0, 1, 2, 3]);
             assert_eq!(vec![1, 2, 4, 5], batcher.vs);
         }
         {
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 2, 4], 1);
-            batcher.merge_k();
-            assert_eq!(vec![1], batcher.vs);
+            // let mut batcher = BatcherSort::new_k(vec![1, 5, 2, 4], 1);
+            // batcher.merge_k();
+            // assert_eq!(vec![1], batcher.vs);
         }
     }
 
@@ -184,10 +217,11 @@ mod test {
     fn test_merge_8() {
         {
             let mut batcher = BatcherSort::new(vec![1, 5, 6, 7, 2, 3, 4, 5]);
-            batcher.merge(0, 8, 1);
+            batcher.merge(&[0, 1, 2, 3, 4, 5, 6, 7]);
             assert_eq!(vec![1, 2, 3, 4, 5, 5, 6, 7], batcher.vs);
             assert_eq!(9, batcher.comparisons());
         }
+        /*
         {
             let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], 1);
             batcher.merge_k();
@@ -218,10 +252,16 @@ mod test {
             assert_eq!(vec![1, 2, 3, 4, 5, 5], batcher.vs);
             assert_eq!(9, batcher.comparisons());
         }
+        */
     }
 
     #[test]
     fn test_sort() {
+        {
+            let mut batcher = BatcherSort::new(vec![5, 1, 6, 2]);
+            batcher.sort();
+            assert_eq!(vec![1, 2, 5, 6], batcher.vs);
+        }
         {
             let mut batcher = BatcherSort::new(vec![1, 5, 6, 7, 2, 4, 3, 5]);
             batcher.sort();
