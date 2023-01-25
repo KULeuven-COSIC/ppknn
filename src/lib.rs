@@ -7,6 +7,7 @@ where
     pub vs: Vec<T>,
     k: usize,
     comp_count: usize,
+    verbose: bool,
 }
 
 impl<T> BatcherSort<T>
@@ -19,6 +20,7 @@ where
             vs,
             k,
             comp_count: 0,
+            verbose: false,
         }
     }
 
@@ -27,6 +29,7 @@ where
             vs,
             k,
             comp_count: 0,
+            verbose: false,
         }
     }
 
@@ -35,7 +38,9 @@ where
     }
 
     fn sort_rec(&mut self, start: usize, len: usize) {
-        println!("[sort_rec begin] lo={}, n={}", start, len);
+        if self.verbose {
+            println!("[sort_rec begin] lo={}, n={}", start, len);
+        }
         if len > 1 {
             let n = len / 2;
             let m = len - n;
@@ -49,7 +54,9 @@ where
             let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
             self.merge_rec(&ix, &jx);
         }
-        println!("[sort_rec exit] lo={}, n={}", start, len);
+        if self.verbose {
+            println!("[sort_rec exit] lo={}, n={}", start, len);
+        }
     }
 
     /// We assume the two sorted arrays we wish to merge are consecutive of length n+m,
@@ -68,7 +75,9 @@ where
     }
 
     fn merge_rec(&mut self, ix: &[usize], jx: &[usize]) {
-        println!("[merge begin] ix={:?}, jx={:?}", ix, jx);
+        if self.verbose {
+            println!("[merge begin] ix={:?}, jx={:?}", ix, jx);
+        }
         let nm = ix.len() * jx.len();
         if nm > 1 {
             let even_ix = self.even_indices(ix);
@@ -111,12 +120,16 @@ where
         } else {
             // do nothing because we have 1 or 0 elements
         }
-        println!("[merge exit] ix={:?}, jx={:?}", ix, jx);
+        if self.verbose {
+            println!("[merge exit] ix={:?}, jx={:?}", ix, jx);
+        }
     }
 
     /// Swap in-place an elements at index `i` with another at index `j`
     fn compare_at(&mut self, i: usize, j: usize) {
-        println!("[compare_at] i={}, j={}", i, j);
+        if self.verbose {
+            println!("[compare_at] i={}, j={}", i, j);
+        }
         self.comp_count += 1;
         if self.vs[i] > self.vs[j] {
             self.vs.swap(i, j);
@@ -306,7 +319,7 @@ mod test {
     }
 
     #[quickcheck]
-    fn prop_sort_k(xs: Vec<usize>, k: usize) -> TestResult {
+    fn prop_sort_k(xs: Vec<u16>, k: usize) -> TestResult {
         if xs.len() > 20 {
             return TestResult::discard();
         }
