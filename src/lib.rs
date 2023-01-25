@@ -223,32 +223,34 @@ mod test {
             assert_eq!(vec![1], batcher.vs.split_at(k).0);
             assert_eq!(1, batcher.comparisons());
         }
-        /*
         {
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], 2);
-            batcher.merge_k();
-            assert_eq!(vec![1, 2], batcher.vs);
+            let k = 2;
+            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            batcher.merge();
+            assert_eq!(vec![1, 2], batcher.vs.split_at(k).0);
             assert_eq!(3, batcher.comparisons());
         }
         {
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], 4);
-            batcher.merge_k();
-            assert_eq!(vec![1, 2, 3, 4], batcher.vs);
+            let k = 4;
+            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            batcher.merge();
+            assert_eq!(vec![1, 2, 3, 4], batcher.vs.split_at(k).0);
             assert_eq!(8, batcher.comparisons());
         }
         {
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], 5);
-            batcher.merge_k();
-            assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs);
+            let k = 5;
+            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            batcher.merge();
+            assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs.split_at(k).0);
             assert_eq!(8, batcher.comparisons());
         }
         {
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], 6);
-            batcher.merge_k();
-            assert_eq!(vec![1, 2, 3, 4, 5, 5], batcher.vs);
+            let k = 6;
+            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            batcher.merge();
+            assert_eq!(vec![1, 2, 3, 4, 5, 5], batcher.vs.split_at(k).0);
             assert_eq!(9, batcher.comparisons());
         }
-        */
     }
 
     #[test]
@@ -282,11 +284,12 @@ mod test {
             batcher.sort();
             assert_eq!(vec![1, 2, 3, 4, 5, 5, 6, 7], batcher.vs);
         }
-        // {
-        //     let mut batcher = BatcherSort::new_k(vec![5, 1, 6, 7], 1);
-        //     batcher.sort_k();
-        //     assert_eq!(vec![1], batcher.vs);
-        // }
+        {
+            let k = 1;
+            let mut batcher = BatcherSort::new_k(vec![5, 1, 6, 7], k);
+            batcher.sort();
+            assert_eq!(vec![1], batcher.vs.split_at(k).0);
+        }
     }
 
     #[quickcheck]
