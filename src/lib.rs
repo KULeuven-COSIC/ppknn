@@ -13,7 +13,6 @@ where
 {
     pub fn new(vs: Vec<T>) -> Self {
         let k = vs.len();
-        assert!(k > 0);
         Self {
             vs,
             k,
@@ -219,6 +218,8 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
 
     #[test]
     fn test_merge_2() {
@@ -331,5 +332,18 @@ mod test {
         //     batcher.sort_k();
         //     assert_eq!(vec![1], batcher.vs);
         // }
+    }
+
+    #[quickcheck]
+    fn prop_sort(xs: Vec<usize>) -> TestResult {
+        if xs.len() > 20 {
+            return TestResult::discard();
+        }
+        let mut sorted = xs.clone();
+        sorted.sort();
+
+        let mut batcher = BatcherSort::new(xs);
+        batcher.sort();
+        TestResult::from_bool(batcher.vs == sorted)
     }
 }
