@@ -1,5 +1,4 @@
 use ppknn::*;
-use tfhe::shortint::parameters::PARAM_MESSAGE_7_CARRY_1;
 use tfhe::shortint::prelude::*;
 
 use bincode;
@@ -17,7 +16,7 @@ fn read_or_gen_keys() -> (ClientKey, ServerKey) {
             (client_key, server_key)
         }
         _ => {
-            let (client_key, server_key) = gen_keys(PARAM_MESSAGE_7_CARRY_1);
+            let (client_key, server_key) = gen_keys(PARAM_MESSAGE_4_CARRY_4);
             let mut serialized_data = Vec::new();
             bincode::serialize_into(&mut serialized_data, &client_key).unwrap();
             bincode::serialize_into(&mut serialized_data, &server_key).unwrap();
@@ -69,8 +68,8 @@ fn test_tfhe() {
     let (client_key, server_key) = read_or_gen_keys();
     println!("keygen done");
 
-    let msg1 = 255;
-    let msg2 = 2;
+    let msg1 = 3;
+    let msg2 = 1;
     let ct_1 = client_key.encrypt(msg1);
     let ct_2 = client_key.encrypt(msg2);
     println!("encryption done");
