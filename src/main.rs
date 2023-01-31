@@ -1,9 +1,10 @@
+use bincode;
 use ppknn::*;
 use tfhe::shortint::prelude::*;
 
-use bincode;
 use std::fs;
 use std::io::Cursor;
+use std::time::Instant;
 
 const DUMMY_KEY: &str = "dummy_key";
 
@@ -65,17 +66,26 @@ fn test_batcher() {
 }
 
 fn test_tfhe() {
+    let keygen_start = Instant::now();
     let (client_key, server_key) = read_or_gen_keys();
-    println!("keygen done");
+    println!(
+        "keygen/loading duration: {} ms",
+        keygen_start.elapsed().as_millis()
+    );
 
     let msg1 = 3;
     let msg2 = 1;
+    let enc_start = Instant::now();
     let ct_1 = client_key.encrypt(msg1);
     let ct_2 = client_key.encrypt(msg2);
-    println!("encryption done");
+    println!(
+        "encryption duration: {} ms",
+        enc_start.elapsed().as_millis()
+    );
 
+    let gt_start = Instant::now();
     let ct_res = server_key.unchecked_greater(&ct_1, &ct_2);
-    println!("greater done");
+    println!("gt duration: {} ms", gt_start.elapsed().as_millis());
 
     let modulus = client_key.parameters.message_modulus.0;
     let output = client_key.decrypt(&ct_res);
