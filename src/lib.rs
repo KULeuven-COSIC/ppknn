@@ -285,15 +285,14 @@ mod test {
         }
     }
 
-    // TODO check this is ok
-    // #[test]
-    // fn test_merge_10() {
-    //     let k = 5;
-    //     let mut batcher = BatcherSort::new_k(vec![2, 4, 6, 8, 10, 1, 3, 5, 7, 9], k);
-    //     batcher.merge();
-    //     assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs.split_at(k).0);
-    //     assert_eq!(10, batcher.comparisons());
-    // }
+    #[test]
+    fn test_merge_10() {
+        let k = 5;
+        let mut batcher = BatcherSort::new_k(vec![2, 4, 6, 8, 10, 1, 3, 5, 7, 9], k);
+        batcher.merge();
+        assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs.split_at(k).0);
+        assert_eq!(11, batcher.comparisons());
+    }
 
     #[test]
     fn test_sort() {
