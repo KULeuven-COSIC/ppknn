@@ -87,10 +87,22 @@ fn test_tfhe() {
     let ct_res = server_key.unchecked_greater(&ct_1, &ct_2);
     println!("gt duration: {} ms", gt_start.elapsed().as_millis());
 
-    let modulus = client_key.parameters.message_modulus.0;
+    let modulus = client_key.parameters.message_modulus.0 as u64;
     let output = client_key.decrypt(&ct_res);
-    assert_eq!(output, (msg1 > msg2) as u64 % modulus as u64);
-    println!("ok")
+    assert_eq!(output, (msg1 > msg2) as u64 % modulus);
+
+    // do more comparisons
+    for m1 in 0..modulus {
+        for m2 in 0..modulus {
+            let ct_1 = client_key.encrypt(m1);
+            let ct_2 = client_key.encrypt(m2);
+            let ct_res = server_key.unchecked_greater(&ct_1, &ct_2);
+            let output = client_key.decrypt(&ct_res);
+            assert_eq!(output, (m1 > m2) as u64 % modulus as u64);
+        }
+    }
+
+    println!("ok");
 }
 
 fn main() {
