@@ -1,5 +1,5 @@
 use ppknn::*;
-use tfhe::shortint::parameters::PARAM_MESSAGE_8_CARRY_0;
+use tfhe::shortint::parameters::PARAM_MESSAGE_7_CARRY_1;
 use tfhe::shortint::prelude::*;
 
 use bincode;
@@ -17,7 +17,7 @@ fn read_or_gen_keys() -> (ClientKey, ServerKey) {
             (client_key, server_key)
         }
         _ => {
-            let (client_key, server_key) = gen_keys(PARAM_MESSAGE_8_CARRY_0);
+            let (client_key, server_key) = gen_keys(PARAM_MESSAGE_7_CARRY_1);
             let mut serialized_data = Vec::new();
             bincode::serialize_into(&mut serialized_data, &client_key).unwrap();
             bincode::serialize_into(&mut serialized_data, &server_key).unwrap();
@@ -27,15 +27,45 @@ fn read_or_gen_keys() -> (ClientKey, ServerKey) {
     }
 }
 
-fn main() {
+fn test_batcher() {
     for e in 0..10 {
         let k = 1 << e;
         let n = 1 << 10;
         let mut batcher = BatcherSort::new_k(vec![0; n], k);
         batcher.sort();
-        println!("{}", batcher.comparisons());
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
+    {
+        let n = 7;
+        let k = 2;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+    {
+        let n = 7;
+        let k = 3;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+    {
+        let n = 10;
+        let k = 2;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+    {
+        let n = 10;
+        let k = 3;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+}
 
+fn test_tfhe() {
     let (client_key, server_key) = read_or_gen_keys();
     println!("keygen done");
 
@@ -52,4 +82,9 @@ fn main() {
     let output = client_key.decrypt(&ct_res);
     assert_eq!(output, (msg1 > msg2) as u64 % modulus as u64);
     println!("ok")
+}
+
+fn main() {
+    test_batcher();
+    test_tfhe();
 }
