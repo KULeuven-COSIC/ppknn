@@ -15,6 +15,17 @@ fn build_local_index_map(ix: &[usize], jx: &[usize]) -> HashMap<usize, usize> {
     out
 }
 
+fn compute_split(len: usize) -> (usize, usize) {
+    let n = len / 2;
+    let m = len - n;
+
+    if (n != 1 && m != 1) && (n % 2 == 1 && m % 2 == 1) {
+        (n+1, m-1)
+    } else {
+        (n, m)
+    }
+}
+
 pub struct BatcherSort<T>
 where
     T: Ord,
@@ -56,9 +67,9 @@ where
         if self.verbose {
             println!("[sort_rec begin] lo={}, n={}", start, len);
         }
+        // sort every chunk recursively
         if len > 1 {
-            let n = len / 2;
-            let m = len - n;
+            let (n, m) = compute_split(len);
             self.sort_rec(start, n);
             self.sort_rec(start + n, m);
 
@@ -339,6 +350,12 @@ mod test {
             let mut batcher = BatcherSort::new_k(vec![0; 16], k);
             batcher.sort();
             assert_eq!(29, batcher.comparisons());
+        }
+        {
+            let k = 3;
+            let mut batcher = BatcherSort::new_k(vec![0; 10], k);
+            batcher.sort();
+            assert_eq!(20, batcher.comparisons());
         }
     }
 

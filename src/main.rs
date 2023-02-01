@@ -63,6 +63,13 @@ fn test_batcher() {
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
+    {
+        let n = 1239;
+        let k = 3;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
 }
 
 fn test_tfhe() {
