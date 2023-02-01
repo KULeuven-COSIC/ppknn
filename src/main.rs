@@ -65,6 +65,20 @@ fn test_batcher() {
     }
     {
         let n = 177;
+        let k = 3;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+    {
+        let n = 10;
+        let k = 5;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.merge();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+    {
+        let n = 177;
         let k = 5;
         let mut batcher = BatcherSort::new_k(vec![0; n], k);
         batcher.sort();
@@ -72,6 +86,27 @@ fn test_batcher() {
     }
     {
         let n = 177;
+        let k = 7;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+    {
+        let n = 1239;
+        let k = 3;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+    {
+        let n = 1239;
+        let k = 5;
+        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        batcher.sort();
+        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
+    }
+    {
+        let n = 1239;
         let k = 7;
         let mut batcher = BatcherSort::new_k(vec![0; n], k);
         batcher.sort();

@@ -84,6 +84,7 @@ where
     }
 
     pub fn new_k(vs: Vec<T>, k: usize) -> Self {
+        let k = k.min(vs.len());
         Self {
             vs,
             k,
@@ -94,6 +95,9 @@ where
 
     pub fn sort(&mut self) {
         if self.vs.len() <= 4 {
+            // for lengths lower or equal to 4,
+            // we cannot split them more than 2,
+            // so just call `sort_rec` directly.
             let chunks: Vec<_> = (0..self.vs.len()).collect();
             self.sort_rec(&chunks);
         } else {
@@ -120,13 +124,14 @@ where
         }
 
         let rem = len % chunk_size;
-        // println!("k={}, len={}, chunks={}, chunk_size={}, rem={}", self.k, len, chunks, chunk_size, rem);
+        if self.verbose {
+            println!("[split_indices] k={}, len={}, chunks={}, chunk_size={}, rem={}", self.k, len, chunks, chunk_size, rem);
+        }
         if rem != 0 {
             let v: Vec<_> = (len - rem..len).collect();
             assert_eq!(v.len(), rem);
             out.push(v);
         }
-        // println!("{:?}", out);
         out
     }
 
@@ -145,7 +150,7 @@ where
 
             let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
             let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
-            self.merge_rec(&ix, &jx);
+            self.merge_rec(&ix, &jx, self.k);
         }
         if self.verbose {
             println!("[sort_rec exit] indices={:?}", indices);
@@ -162,7 +167,7 @@ where
         let jx_full: Vec<_> = (n..n + m).collect();
         let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
         let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
-        self.merge_rec(&ix, &jx)
+        self.merge_rec(&ix, &jx, self.k)
     }
 
     fn tournament_merge(&mut self, index_sets: Vec<Vec<usize>>) {
@@ -184,7 +189,11 @@ where
             } else {
                 index_sets[i * 2 + 1].len()
             };
-            self.merge_rec(&index_sets[i * 2][0..len_left], &index_sets[i * 2 + 1][0..len_right]);
+            // TODO is this right?
+            // the output length is the minimum of `k` and
+            // the total number of values in each chunk
+            let output_len = (self.k as f64).min(len_left as f64 + len_right as f64) as usize;
+            self.merge_rec(&index_sets[i * 2][0..len_left], &index_sets[i * 2 + 1][0..len_right], output_len);
 
             // build a new set that combines the two old ones
             let mut s = index_sets[i * 2].clone();
@@ -197,18 +206,23 @@ where
         self.tournament_merge(new_index_sets);
     }
 
-    fn merge_rec(&mut self, ix: &[usize], jx: &[usize]) {
+    fn merge_rec(&mut self, ix: &[usize], jx: &[usize], output_len: usize) {
         if self.verbose {
             println!("[merge begin] ix={:?}, jx={:?}", ix, jx);
         }
         let nm = ix.len() * jx.len();
         if nm > 1 {
+            // TODO here we remove the indices we don't need
+            // but if tournament method is used this step is redundant
             let even_ix = self.even_indices(ix);
             let even_jx = self.even_indices(jx);
             let odd_ix = self.odd_indices(ix);
             let odd_jx = self.odd_indices(jx);
-            self.merge_rec(&even_ix, &even_jx);
-            self.merge_rec(&odd_ix, &odd_jx);
+
+            let odd_output_len = ((output_len as f64 - 1.)/2.).ceil() as usize;
+            let even_output_len = output_len - odd_output_len;
+            self.merge_rec(&even_ix, &even_jx, even_output_len);
+            self.merge_rec(&odd_ix, &odd_jx, odd_output_len);
 
             let even_all = [even_ix, even_jx].concat();
             let odd_all = [odd_ix, odd_jx].concat();
@@ -225,8 +239,8 @@ where
             for i in 0..w_max {
                 // we need to compare the local index, not the global one
                 // i.e., ix[0] is at local index 0, jx[0] is at local index |ix|
-                if local_index_map[&odd_all[i]] < self.k
-                    || local_index_map[&even_all[i + 1]] < self.k
+                if local_index_map[&odd_all[i]] < output_len
+                    || local_index_map[&even_all[i + 1]] < output_len
                 {
                     self.compare_at(odd_all[i], even_all[i + 1]);
                 }
@@ -404,7 +418,7 @@ mod test {
         let mut batcher = BatcherSort::new_k(vec![2, 4, 6, 8, 10, 1, 3, 5, 7, 9], k);
         batcher.merge();
         assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs.split_at(k).0);
-        assert_eq!(11, batcher.comparisons());
+        assert_eq!(10, batcher.comparisons());
     }
 
     #[test]
@@ -483,6 +497,38 @@ mod test {
         if k > xs.len() {
             return TestResult::discard();
         }
+
+        let mut sorted = xs.clone();
+        sorted.sort();
+
+        let mut batcher = BatcherSort::new_k(xs, k);
+        batcher.sort();
+
+        TestResult::from_bool(batcher.vs.split_at(k).0 == sorted.split_at(k).0)
+    }
+
+    #[quickcheck]
+    fn prop_sort_k_5(xs: Vec<u16>) -> TestResult {
+        if xs.len() > 5000 || xs.len() < 1 {
+            return TestResult::discard();
+        }
+        let k = 5usize.min(xs.len());
+
+        let mut sorted = xs.clone();
+        sorted.sort();
+
+        let mut batcher = BatcherSort::new_k(xs, k);
+        batcher.sort();
+
+        TestResult::from_bool(batcher.vs.split_at(k).0 == sorted.split_at(k).0)
+    }
+
+    #[quickcheck]
+    fn prop_sort_k_2(xs: Vec<u16>) -> TestResult {
+        if xs.len() > 5000 || xs.len() < 1 {
+            return TestResult::discard();
+        }
+        let k = 2usize.min(xs.len());
 
         let mut sorted = xs.clone();
         sorted.sort();
