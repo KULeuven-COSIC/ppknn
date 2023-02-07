@@ -146,9 +146,9 @@ fn test_tfhe() {
         for m2 in 0..modulus {
             let ct_1 = client_key.encrypt(m1);
             let ct_2 = client_key.encrypt(m2);
-            let ct_res = server_key.unchecked_greater(&ct_1, &ct_2);
+            let ct_res = server_key.keyswitch_programmable_bootstrap_bivariate(&ct_1, &ct_2, &min_acc);
             let output = client_key.decrypt(&ct_res);
-            assert_eq!(output, msg1.min(msg2));
+            assert_eq!(output, m1.min(m2));
         }
     }
 
