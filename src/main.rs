@@ -131,14 +131,15 @@ fn test_tfhe() {
         "encryption duration: {} ms",
         enc_start.elapsed().as_millis()
     );
+    let modulus = client_key.parameters.message_modulus.0 as u64;
+    let min_acc = server_key.generate_accumulator_bivariate(|x, y| x.min(y) % modulus);
 
     let gt_start = Instant::now();
-    let ct_res = server_key.unchecked_greater(&ct_1, &ct_2);
-    println!("gt duration: {} ms", gt_start.elapsed().as_millis());
+    let ct_res = server_key.keyswitch_programmable_bootstrap_bivariate(&ct_1, &ct_2, &min_acc);
+    println!("min duration: {} ms", gt_start.elapsed().as_millis());
 
-    let modulus = client_key.parameters.message_modulus.0 as u64;
     let output = client_key.decrypt(&ct_res);
-    assert_eq!(output, (msg1 > msg2) as u64 % modulus);
+    assert_eq!(output, msg1.min(msg2));
 
     // do more comparisons
     for m1 in 0..modulus {
@@ -147,7 +148,7 @@ fn test_tfhe() {
             let ct_2 = client_key.encrypt(m2);
             let ct_res = server_key.unchecked_greater(&ct_1, &ct_2);
             let output = client_key.decrypt(&ct_res);
-            assert_eq!(output, (m1 > m2) as u64 % modulus as u64);
+            assert_eq!(output, msg1.min(msg2));
         }
     }
 
@@ -156,5 +157,5 @@ fn test_tfhe() {
 
 fn main() {
     test_batcher();
-    // test_tfhe();
+    test_tfhe();
 }

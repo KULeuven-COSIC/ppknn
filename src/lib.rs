@@ -125,7 +125,10 @@ where
 
         let rem = len % chunk_size;
         if self.verbose {
-            println!("[split_indices] k={}, len={}, chunks={}, chunk_size={}, rem={}", self.k, len, chunks, chunk_size, rem);
+            println!(
+                "[split_indices] k={}, len={}, chunks={}, chunk_size={}, rem={}",
+                self.k, len, chunks, chunk_size, rem
+            );
         }
         if rem != 0 {
             let v: Vec<_> = (len - rem..len).collect();
@@ -193,7 +196,11 @@ where
             // the output length is the minimum of `k` and
             // the total number of values in each chunk
             let output_len = (self.k as f64).min(len_left as f64 + len_right as f64) as usize;
-            self.merge_rec(&index_sets[i * 2][0..len_left], &index_sets[i * 2 + 1][0..len_right], output_len);
+            self.merge_rec(
+                &index_sets[i * 2][0..len_left],
+                &index_sets[i * 2 + 1][0..len_right],
+                output_len,
+            );
 
             // build a new set that combines the two old ones
             let mut s = index_sets[i * 2].clone();
@@ -219,7 +226,7 @@ where
             let odd_ix = self.odd_indices(ix);
             let odd_jx = self.odd_indices(jx);
 
-            let odd_output_len = ((output_len as f64 - 1.)/2.).ceil() as usize;
+            let odd_output_len = ((output_len as f64 - 1.) / 2.).ceil() as usize;
             let even_output_len = output_len - odd_output_len;
             self.merge_rec(&even_ix, &even_jx, even_output_len);
             self.merge_rec(&odd_ix, &odd_jx, odd_output_len);
