@@ -15,50 +15,6 @@ fn build_local_index_map(ix: &[usize], jx: &[usize]) -> HashMap<usize, usize> {
     out
 }
 
-fn compute_split(len: usize, k: usize) -> (usize, usize) {
-    /*
-    if k > len/2 {
-        let n = len / 2;
-        let m = len - n;
-
-        if (n != 1 && m != 1) && (n % 2 == 1 && m % 2 == 1) {
-            (n+1, m-1)
-        } else {
-            (n, m)
-        }
-    } else {
-        // The goal is to split `len` into two chunks
-        // such that one of the chunk is a multiple of 2^ceil(log_2(k)).
-        let chunk_size = 2usize.pow((k as f64).log2().ceil() as u32);
-        let chunks = {
-            let tmp = len / chunk_size;
-            if tmp == 0 {
-                1
-            } else {
-                tmp
-            }
-        };
-        // let rem = len % chunk_size;
-
-        let n = {
-            let tmp = (chunks / 2)*chunk_size;
-            if tmp == 0 {
-                chunk_size
-            } else {
-                tmp
-            }
-        };
-        let m = len - n;
-        // println!("len={}, k={}, n={}, m={}", len, k, n, m);
-        assert!(n != 0 && m != 0);
-        (n, m)
-    }
-    */
-    let n = len / 2;
-    let m = len - n;
-    (n, m)
-}
-
 pub struct BatcherSort<T>
 where
     T: Ord,
@@ -144,7 +100,8 @@ where
         }
         // sort every chunk recursively
         if indices.len() > 1 {
-            let (n, m) = compute_split(indices.len(), self.k);
+            let n = indices.len() / 2;
+            let m = indices.len() - n;
             self.sort_rec(&indices[0..n]);
             self.sort_rec(&indices[n..n + m]);
 
@@ -219,8 +176,6 @@ where
         }
         let nm = ix.len() * jx.len();
         if nm > 1 {
-            // TODO here we remove the indices we don't need
-            // but if tournament method is used this step is redundant
             let even_ix = self.even_indices(ix);
             let even_jx = self.even_indices(jx);
             let odd_ix = self.odd_indices(ix);
@@ -301,12 +256,16 @@ where
         for i in (0..indices.len()).step_by(2) {
             out.push(indices[i]);
         }
+        // if tournament method is used this step is redundant
+        /*
         let expected_len = if out.len() > self.k {
             self.k
         } else {
             out.len()
         };
         out.split_at(expected_len).0.try_into().unwrap()
+        */
+        out
     }
 }
 
