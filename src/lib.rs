@@ -1,3 +1,5 @@
+pub mod comparator;
+
 use std::cmp;
 use std::collections::HashMap;
 
