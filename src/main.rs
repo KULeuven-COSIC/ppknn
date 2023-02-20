@@ -1,6 +1,6 @@
 use bincode;
+use ppknn::batcher::*;
 use ppknn::comparator::*;
-use ppknn::*;
 use tfhe::shortint::prelude::*;
 
 use std::fs;
