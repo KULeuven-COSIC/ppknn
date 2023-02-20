@@ -45,7 +45,7 @@ mod test {
     fn test_enc_sort() {
         {
             let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_2_CARRY_2);
-            let pt_vec = vec![1, 0, 2, 2u64];
+            let pt_vec = vec![1, 0, 2, 3u64];
             let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client_key), &client_key.parameters, server_key);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
@@ -56,7 +56,7 @@ mod test {
         }
         {
             let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_2_CARRY_2);
-            let pt_vec = vec![1, 2, 0, 2u64];
+            let pt_vec = vec![1, 2, 0, 3u64];
             let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client_key), &client_key.parameters, server_key);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
@@ -67,7 +67,7 @@ mod test {
         }
         {
             let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_2_CARRY_2);
-            let pt_vec = vec![1, 2, 2, 2u64];
+            let pt_vec = vec![2, 2, 1, 3u64];
             let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client_key), &client_key.parameters, server_key);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
