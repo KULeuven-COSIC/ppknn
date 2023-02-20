@@ -1,4 +1,5 @@
 use bincode;
+use ppknn::comparator::*;
 use ppknn::*;
 use tfhe::shortint::prelude::*;
 
@@ -31,84 +32,84 @@ fn test_batcher() {
     for e in 0..10 {
         let k = 1 << e;
         let n = 1 << 10;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 7;
         let k = 2;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 7;
         let k = 3;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 10;
         let k = 2;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 10;
         let k = 3;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 177;
         let k = 3;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 10;
         let k = 5;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.merge();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 177;
         let k = 5;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 177;
         let k = 7;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 1239;
         let k = 3;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 1239;
         let k = 5;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
     {
         let n = 1239;
         let k = 7;
-        let mut batcher = BatcherSort::new_k(vec![0; n], k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
         batcher.sort();
         println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
     }
@@ -146,7 +147,8 @@ fn test_tfhe() {
         for m2 in 0..modulus {
             let ct_1 = client_key.encrypt(m1);
             let ct_2 = client_key.encrypt(m2);
-            let ct_res = server_key.keyswitch_programmable_bootstrap_bivariate(&ct_1, &ct_2, &min_acc);
+            let ct_res =
+                server_key.keyswitch_programmable_bootstrap_bivariate(&ct_1, &ct_2, &min_acc);
             let output = client_key.decrypt(&ct_res);
             assert_eq!(output, m1.min(m2));
         }

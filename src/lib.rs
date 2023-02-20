@@ -1,5 +1,6 @@
 pub mod comparator;
 
+use comparator::Cmp;
 use std::cmp;
 use std::collections::HashMap;
 
@@ -17,36 +18,27 @@ fn build_local_index_map(ix: &[usize], jx: &[usize]) -> HashMap<usize, usize> {
     out
 }
 
-pub struct BatcherSort<T>
-where
-    T: Ord,
-{
-    pub vs: Vec<T>,
+pub struct BatcherSort<T> {
+    pub vs: Box<dyn Cmp<Item = T>>,
     k: usize,
-    comp_count: usize,
     verbose: bool,
 }
 
-impl<T> BatcherSort<T>
-where
-    T: Ord,
-{
-    pub fn new(vs: Vec<T>) -> Self {
+impl<T> BatcherSort<T> {
+    pub fn new(vs: Box<dyn Cmp<Item = T>>) -> Self {
         let k = vs.len();
         Self {
             vs,
             k,
-            comp_count: 0,
             verbose: false,
         }
     }
 
-    pub fn new_k(vs: Vec<T>, k: usize) -> Self {
+    pub fn new_k(vs: Box<dyn Cmp<Item = T>>, k: usize) -> Self {
         let k = k.min(vs.len());
         Self {
             vs,
             k,
-            comp_count: 0,
             verbose: false,
         }
     }
@@ -206,7 +198,7 @@ where
                 if local_index_map[&odd_all[i]] < output_len
                     || local_index_map[&even_all[i + 1]] < output_len
                 {
-                    self.compare_at(odd_all[i], even_all[i + 1]);
+                    self.vs.cmp_at(odd_all[i], even_all[i + 1]);
                 }
             }
 
@@ -223,7 +215,7 @@ where
                 }
             }
         } else if nm == 1 {
-            self.compare_at(ix[0], jx[0]);
+            self.vs.cmp_at(ix[0], jx[0]);
         } else {
             // do nothing because we have 1 or 0 elements
         }
@@ -232,20 +224,9 @@ where
         }
     }
 
-    /// Swap in-place an elements at index `i` with another at index `j`
-    fn compare_at(&mut self, i: usize, j: usize) {
-        if self.verbose {
-            println!("[compare_at] i={}, j={}", i, j);
-        }
-        self.comp_count += 1;
-        if self.vs[i] > self.vs[j] {
-            self.vs.swap(i, j);
-        }
-    }
-
     /// Output the number of comparisons
     pub fn comparisons(&self) -> usize {
-        self.comp_count
+        self.vs.cmp_count()
     }
 
     fn odd_indices(&self, indices: &[usize]) -> Vec<usize> {
@@ -274,20 +255,21 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use comparator::ClearCmp;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 
     #[test]
     fn test_merge_2() {
         {
-            let mut batcher = BatcherSort::new(vec![2, 1]);
+            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![2, 1]));
             batcher.merge();
-            assert_eq!(vec![1, 2], batcher.vs);
+            assert_eq!(vec![1, 2], batcher.vs.inner());
             assert_eq!(1, batcher.comparisons());
         }
         {
             let k = 1;
-            let mut batcher = BatcherSort::new_k(vec![2, 1], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![2, 1]), k);
             batcher.merge();
             assert_eq!(vec![1], batcher.vs.split_at(k).0);
             assert_eq!(1, batcher.comparisons());
@@ -297,14 +279,14 @@ mod test {
     #[test]
     fn test_merge_3() {
         {
-            let mut batcher = BatcherSort::new(vec![1, 5, 2]);
+            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![1, 5, 2]));
             batcher.merge();
-            assert_eq!(vec![1, 2, 5], batcher.vs);
+            assert_eq!(vec![1, 2, 5], batcher.vs.inner());
             assert_eq!(2, batcher.comparisons());
         }
         {
             let k = 1;
-            let mut batcher = BatcherSort::new_k(vec![2, 1, 5], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![2, 1, 5]), k);
             batcher.merge();
             assert_eq!(vec![1], batcher.vs.split_at(k).0);
             assert_eq!(1, batcher.comparisons());
@@ -314,14 +296,14 @@ mod test {
     #[test]
     fn test_merge_4() {
         {
-            let mut batcher = BatcherSort::new(vec![1, 5, 2, 4]);
+            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![1, 5, 2, 4]));
             batcher.merge();
-            assert_eq!(vec![1, 2, 4, 5], batcher.vs);
+            assert_eq!(vec![1, 2, 4, 5], batcher.vs.inner());
             assert_eq!(3, batcher.comparisons());
         }
         {
             let k = 1;
-            let mut batcher = BatcherSort::new_k(vec![2, 5, 1, 4], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![2, 5, 1, 4]), k);
             batcher.merge();
             assert_eq!(vec![1], batcher.vs.split_at(k).0);
             assert_eq!(1, batcher.comparisons());
@@ -330,50 +312,50 @@ mod test {
 
     #[test]
     fn test_merge_5() {
-        let mut batcher = BatcherSort::new(vec![1, 5, 6, 2, 4]);
+        let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![1, 5, 6, 2, 4]));
         batcher.merge();
-        assert_eq!(vec![1, 2, 4, 5, 6], batcher.vs);
+        assert_eq!(vec![1, 2, 4, 5, 6], batcher.vs.inner());
     }
 
     #[test]
     fn test_merge_8() {
         {
-            let mut batcher = BatcherSort::new(vec![1, 5, 6, 7, 2, 3, 4, 5]);
+            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![1, 5, 6, 7, 2, 3, 4, 5]));
             batcher.merge();
-            assert_eq!(vec![1, 2, 3, 4, 5, 5, 6, 7], batcher.vs);
+            assert_eq!(vec![1, 2, 3, 4, 5, 5, 6, 7], batcher.vs.inner());
             assert_eq!(9, batcher.comparisons());
         }
         {
             let k = 1;
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![1, 5, 6, 7, 2, 3, 4, 5]), k);
             batcher.merge();
             assert_eq!(vec![1], batcher.vs.split_at(k).0);
             assert_eq!(1, batcher.comparisons());
         }
         {
             let k = 2;
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![1, 5, 6, 7, 2, 3, 4, 5]), k);
             batcher.merge();
             assert_eq!(vec![1, 2], batcher.vs.split_at(k).0);
             assert_eq!(3, batcher.comparisons());
         }
         {
             let k = 4;
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![1, 5, 6, 7, 2, 3, 4, 5]), k);
             batcher.merge();
             assert_eq!(vec![1, 2, 3, 4], batcher.vs.split_at(k).0);
             assert_eq!(8, batcher.comparisons());
         }
         {
             let k = 5;
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![1, 5, 6, 7, 2, 3, 4, 5]), k);
             batcher.merge();
             assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs.split_at(k).0);
             assert_eq!(8, batcher.comparisons());
         }
         {
             let k = 6;
-            let mut batcher = BatcherSort::new_k(vec![1, 5, 6, 7, 2, 3, 4, 5], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![1, 5, 6, 7, 2, 3, 4, 5]), k);
             batcher.merge();
             assert_eq!(vec![1, 2, 3, 4, 5, 5], batcher.vs.split_at(k).0);
             assert_eq!(9, batcher.comparisons());
@@ -383,7 +365,8 @@ mod test {
     #[test]
     fn test_merge_10() {
         let k = 5;
-        let mut batcher = BatcherSort::new_k(vec![2, 4, 6, 8, 10, 1, 3, 5, 7, 9], k);
+        let mut batcher =
+            BatcherSort::new_k(ClearCmp::boxed(vec![2, 4, 6, 8, 10, 1, 3, 5, 7, 9]), k);
         batcher.merge();
         assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs.split_at(k).0);
         assert_eq!(10, batcher.comparisons());
@@ -392,52 +375,52 @@ mod test {
     #[test]
     fn test_sort() {
         {
-            let mut batcher = BatcherSort::new(vec![5, 1, 6, 2]);
+            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![5, 1, 6, 2]));
             batcher.sort();
-            assert_eq!(vec![1, 2, 5, 6], batcher.vs);
+            assert_eq!(vec![1, 2, 5, 6], batcher.vs.inner());
         }
         {
-            let mut batcher = BatcherSort::new(vec![5, 4, 3, 2, 1]);
+            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![5, 4, 3, 2, 1]));
             batcher.sort();
-            assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs);
+            assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs.inner());
         }
         {
-            let mut batcher = BatcherSort::new(vec![7, 6, 5, 4, 3, 2, 1]);
+            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![7, 6, 5, 4, 3, 2, 1]));
             batcher.sort();
-            assert_eq!(vec![1, 2, 3, 4, 5, 6, 7], batcher.vs);
+            assert_eq!(vec![1, 2, 3, 4, 5, 6, 7], batcher.vs.inner());
         }
         {
-            let mut batcher = BatcherSort::new(vec![1, 5, 6, 7, 2, 4, 3, 5]);
+            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![1, 5, 6, 7, 2, 4, 3, 5]));
             batcher.sort();
-            assert_eq!(vec![1, 2, 3, 4, 5, 5, 6, 7], batcher.vs);
+            assert_eq!(vec![1, 2, 3, 4, 5, 5, 6, 7], batcher.vs.inner());
         }
         {
             let k = 1;
-            let mut batcher = BatcherSort::new_k(vec![5, 1, 6, 7], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![5, 1, 6, 7]), k);
             batcher.sort();
             assert_eq!(vec![1], batcher.vs.split_at(k).0);
         }
         {
             let k = 2;
-            let mut batcher = BatcherSort::new_k(vec![0; 4], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; 4]), k);
             batcher.sort();
             assert_eq!(5, batcher.comparisons());
         }
         {
             let k = 2;
-            let mut batcher = BatcherSort::new_k(vec![0; 8], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; 8]), k);
             batcher.sort();
             assert_eq!(13, batcher.comparisons());
         }
         {
             let k = 2;
-            let mut batcher = BatcherSort::new_k(vec![0; 16], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; 16]), k);
             batcher.sort();
             assert_eq!(29, batcher.comparisons());
         }
         {
             let k = 3;
-            let mut batcher = BatcherSort::new_k(vec![0; 10], k);
+            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; 10]), k);
             batcher.sort();
             assert_eq!(20, batcher.comparisons());
         }
@@ -451,9 +434,9 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let mut batcher = BatcherSort::new(xs);
+        let mut batcher = BatcherSort::new(ClearCmp::boxed(xs));
         batcher.sort();
-        TestResult::from_bool(batcher.vs == sorted)
+        TestResult::from_bool(batcher.vs.inner() == sorted)
     }
 
     #[quickcheck]
@@ -469,7 +452,7 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let mut batcher = BatcherSort::new_k(xs, k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(xs), k);
         batcher.sort();
 
         TestResult::from_bool(batcher.vs.split_at(k).0 == sorted.split_at(k).0)
@@ -485,7 +468,7 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let mut batcher = BatcherSort::new_k(xs, k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(xs), k);
         batcher.sort();
 
         TestResult::from_bool(batcher.vs.split_at(k).0 == sorted.split_at(k).0)
@@ -501,7 +484,7 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let mut batcher = BatcherSort::new_k(xs, k);
+        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(xs), k);
         batcher.sort();
 
         TestResult::from_bool(batcher.vs.split_at(k).0 == sorted.split_at(k).0)

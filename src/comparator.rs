@@ -1,6 +1,6 @@
 use std::cmp::Ord;
 
-pub trait Comparator {
+pub trait Cmp {
     type Item;
     // NOTE: we can remove mut if we
     // put a mutex on every element
@@ -8,25 +8,30 @@ pub trait Comparator {
     fn swap(&mut self, i: usize, j: usize);
     fn split_at(&self, mid: usize) -> (&[Self::Item], &[Self::Item]);
     fn len(&self) -> usize;
-    fn comparisons(&self) -> usize;
+    fn cmp_count(&self) -> usize;
+    fn inner(&self) -> Vec<Self::Item>;
 }
 
-struct ClearComparator<T: Ord> {
-    comp_count: usize,
+pub struct ClearCmp<T: Ord + Clone> {
+    cmp_count: usize,
     vs: Vec<T>,
 }
 
-impl<T: Ord> ClearComparator<T> {
+impl<T: Ord + Clone> ClearCmp<T> {
     pub fn new(vs: Vec<T>) -> Self {
-        Self { comp_count: 0, vs }
+        Self { cmp_count: 0, vs }
+    }
+
+    pub fn boxed(vs: Vec<T>) -> Box<Self> {
+        Box::new(Self { cmp_count: 0, vs })
     }
 }
 
-impl <T: Ord>Comparator for ClearComparator<T> {
+impl<T: Ord + Clone> Cmp for ClearCmp<T> {
     type Item = T;
 
     fn cmp_at(&mut self, i: usize, j: usize) {
-        self.comp_count += 1;
+        self.cmp_count += 1;
         if self.vs[i] > self.vs[j] {
             self.vs.swap(i, j);
         }
@@ -44,8 +49,11 @@ impl <T: Ord>Comparator for ClearComparator<T> {
         self.vs.len()
     }
 
-    fn comparisons(&self) -> usize {
-        self.comp_count
+    fn cmp_count(&self) -> usize {
+        self.cmp_count
+    }
+
+    fn inner(&self) -> Vec<T> {
+        self.vs.clone()
     }
 }
-
