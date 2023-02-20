@@ -1,32 +1,4 @@
-use bincode;
-use ppknn::batcher::*;
-use ppknn::comparator::*;
-use tfhe::shortint::prelude::*;
-
-use std::fs;
-use std::io::Cursor;
-use std::time::Instant;
-
-const DUMMY_KEY: &str = "dummy_key";
-
-fn read_or_gen_keys() -> (ClientKey, ServerKey) {
-    match fs::read(DUMMY_KEY) {
-        Ok(s) => {
-            let mut serialized_data = Cursor::new(&s);
-            let client_key: ClientKey = bincode::deserialize_from(&mut serialized_data).unwrap();
-            let server_key: ServerKey = bincode::deserialize_from(&mut serialized_data).unwrap();
-            (client_key, server_key)
-        }
-        _ => {
-            let (client_key, server_key) = gen_keys(PARAM_MESSAGE_4_CARRY_4);
-            let mut serialized_data = Vec::new();
-            bincode::serialize_into(&mut serialized_data, &client_key).unwrap();
-            bincode::serialize_into(&mut serialized_data, &server_key).unwrap();
-            fs::write(DUMMY_KEY, serialized_data).expect("unable to write to file");
-            (client_key, server_key)
-        }
-    }
-}
+use ppknn::*;
 
 fn test_batcher() {
     for e in 0..10 {
@@ -115,6 +87,7 @@ fn test_batcher() {
     }
 }
 
+/*
 fn test_tfhe() {
     let keygen_start = Instant::now();
     let (client_key, server_key) = read_or_gen_keys();
@@ -156,8 +129,8 @@ fn test_tfhe() {
 
     println!("ok");
 }
+*/
 
 fn main() {
     test_batcher();
-    test_tfhe();
 }

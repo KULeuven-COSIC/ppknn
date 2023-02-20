@@ -69,16 +69,16 @@ pub struct EncCmp {
 }
 
 impl EncCmp {
-    pub fn boxed(vs: Vec<Ciphertext>, params: &Parameters, server_key: ServerKey) -> Self {
+    pub fn boxed(vs: Vec<Ciphertext>, params: &Parameters, server_key: ServerKey) -> Box<Self> {
         let modulus = params.message_modulus.0 as u64;
         let cmp_acc = server_key.generate_accumulator_bivariate(|x, y| x.min(y) % modulus);
-        Self {
+        Box::new(Self {
             cmp_count: 0,
             vs,
             params: params.clone(),
             server_key,
             cmp_acc,
-        }
+        })
     }
 
     pub fn print_params(&self) {
