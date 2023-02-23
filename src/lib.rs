@@ -4,9 +4,9 @@ pub mod comparator;
 pub use batcher::*;
 pub use comparator::*;
 
-use tfhe::shortint::prelude::*;
 use std::fs;
 use std::io::Cursor;
+use tfhe::shortint::prelude::*;
 
 const DUMMY_KEY: &str = "dummy_key";
 
@@ -30,51 +30,63 @@ pub fn read_or_gen_keys(param: &Parameters) -> (ClientKey, ServerKey) {
     }
 }
 
-pub fn enc_vec(vs: &[u64], client_key: &ClientKey) -> Vec<Ciphertext> {
-    vs.iter().map(|x| {
-        client_key.encrypt(*x)
-    }).collect()
+pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
+    vs.iter()
+        .map(|v| EncItem::new(client_key.encrypt(v.0), client_key.encrypt(v.1)))
+        .collect()
 }
-
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use tfhe::shortint::parameters::PARAM_MESSAGE_3_CARRY_0;
 
     #[test]
     fn test_enc_sort() {
         {
-            let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_2_CARRY_2);
-            let pt_vec = vec![1, 0, 2, 3u64];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client_key), &client_key.parameters, server_key);
+            let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_3_CARRY_0);
+            let pt_vec = vec![(1, 1), (0, 0), (2, 2), (3u64, 3u64)];
+            let enc_cmp = EncCmp::boxed(
+                enc_vec(&pt_vec, &client_key),
+                &client_key.parameters,
+                server_key,
+            );
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = client_key.decrypt(&sorter.inner()[0]);
-            assert_eq!(output, 0);
+            let output = sorter.inner()[0].decrypt(&client_key);
+            assert_eq!(output, (0, 0));
         }
         {
-            let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_2_CARRY_2);
-            let pt_vec = vec![1, 2, 0, 3u64];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client_key), &client_key.parameters, server_key);
+            let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_3_CARRY_0);
+            let pt_vec = vec![(2, 2), (2, 2), (1, 1), (3u64, 3u64)];
+            let enc_cmp = EncCmp::boxed(
+                enc_vec(&pt_vec, &client_key),
+                &client_key.parameters,
+                server_key,
+            );
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = client_key.decrypt(&sorter.inner()[0]);
-            assert_eq!(output, 0);
+            let output = sorter.inner()[0].decrypt(&client_key);
+            assert_eq!(output, (1, 1));
         }
         {
-            let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_2_CARRY_2);
-            let pt_vec = vec![2, 2, 1, 3u64];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client_key), &client_key.parameters, server_key);
+            let (client_key, server_key) = read_or_gen_keys(&PARAM_MESSAGE_3_CARRY_0);
+            let pt_vec = vec![(1, 1), (2, 2), (3u64, 3u64), (0, 0)];
+            let enc_cmp = EncCmp::boxed(
+                enc_vec(&pt_vec, &client_key),
+                &client_key.parameters,
+                server_key,
+            );
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = client_key.decrypt(&sorter.inner()[0]);
-            assert_eq!(output, 1);
+            let output = sorter.inner()[0].decrypt(&client_key);
+            assert_eq!(output, (0, 0));
         }
     }
 }

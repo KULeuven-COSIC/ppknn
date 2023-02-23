@@ -60,24 +60,43 @@ impl<T: Ord + Clone> Cmp for ClearCmp<T> {
     }
 }
 
+pub struct EncItem {
+    pub value: Ciphertext,
+    pub class: Ciphertext,
+}
+
+impl EncItem {
+    pub fn new(value: Ciphertext, class: Ciphertext) -> Self {
+        Self { value, class }
+    }
+
+    pub fn decrypt(&self, client_key: &ClientKey) -> (u64, u64) {
+        let modulus = client_key.parameters.message_modulus.0 as u64;
+        (
+            client_key.decrypt(&self.value) % modulus,
+            client_key.decrypt(&self.class) % modulus,
+        )
+    }
+}
+
 pub struct EncCmp {
     cmp_count: usize,
-    vs: Vec<Ciphertext>,
+    vs: Vec<EncItem>,
     params: Parameters,
     server_key: ServerKey,
-    cmp_acc: Accumulator,
+    acc: Accumulator,
 }
 
 impl EncCmp {
-    pub fn boxed(vs: Vec<Ciphertext>, params: &Parameters, server_key: ServerKey) -> Box<Self> {
+    pub fn boxed(vs: Vec<EncItem>, params: &Parameters, server_key: ServerKey) -> Box<Self> {
         let modulus = params.message_modulus.0 as u64;
-        let cmp_acc = server_key.generate_accumulator_bivariate(|x, y| x.min(y) % modulus);
+        let acc = server_key.generate_accumulator(|x| if x >= modulus / 2 { 1 } else { 0 });
         Box::new(Self {
             cmp_count: 0,
             vs,
             params: params.clone(),
             server_key,
-            cmp_acc,
+            acc,
         })
     }
 
@@ -87,28 +106,55 @@ impl EncCmp {
 }
 
 impl Cmp for EncCmp {
-    type Item = Ciphertext;
+    type Item = EncItem;
 
     fn cmp_at(&mut self, i: usize, j: usize) {
-        // i gets the ct_res
-        // j gets the other ciphertext
-        let ct_res = self.server_key.keyswitch_programmable_bootstrap_bivariate(
-            &self.vs[i],
-            &self.vs[j],
-            &self.cmp_acc,
-        );
-        let mut other = self.server_key.unchecked_add(&self.vs[i], &self.vs[j]);
-        self.server_key.unchecked_sub_assign(&mut other, &ct_res);
+        let diff = self
+            .server_key
+            .unchecked_sub(&self.vs[i].value, &self.vs[j].value);
+        let cmp_res = self
+            .server_key
+            .keyswitch_programmable_bootstrap(&diff, &self.acc);
+        // let cmp_res = self.server_key.unchecked_less(&self.vs[i].value, &self.vs[j].value);
 
-        self.vs[i] = ct_res;
-        self.vs[j] = other;
+        // vs[j] + cmp_res * (vs[i] - vs[j])
+        let mut smaller = self
+            .server_key
+            .unchecked_sub(&self.vs[i].value, &self.vs[j].value);
+        self.server_key
+            .unchecked_mul_lsb_assign(&mut smaller, &cmp_res);
+        self.server_key
+            .unchecked_add_assign(&mut smaller, &self.vs[j].value);
+
+        let mut bigger = self
+            .server_key
+            .unchecked_add(&self.vs[i].value, &self.vs[j].value);
+        self.server_key.unchecked_sub_assign(&mut bigger, &smaller);
+
+        // j + cmp_res * (i - j)
+        let mut smaller_class = self
+            .server_key
+            .unchecked_sub(&self.vs[i].class, &self.vs[j].class);
+        self.server_key
+            .unchecked_mul_lsb_assign(&mut smaller_class, &cmp_res);
+        self.server_key
+            .unchecked_add_assign(&mut smaller_class, &self.vs[j].class);
+
+        let mut bigger_class = self
+            .server_key
+            .unchecked_add(&self.vs[i].class, &self.vs[j].class);
+        self.server_key
+            .unchecked_sub_assign(&mut bigger_class, &smaller_class);
+
+        self.vs[i] = EncItem::new(smaller, smaller_class);
+        self.vs[j] = EncItem::new(bigger, bigger_class);
     }
 
     fn swap(&mut self, i: usize, j: usize) {
         self.vs.swap(i, j);
     }
 
-    fn split_at(&self, mid: usize) -> (&[Ciphertext], &[Ciphertext]) {
+    fn split_at(&self, mid: usize) -> (&[EncItem], &[EncItem]) {
         self.vs.split_at(mid)
     }
 
@@ -120,7 +166,7 @@ impl Cmp for EncCmp {
         self.cmp_count
     }
 
-    fn inner(&self) -> &[Ciphertext] {
+    fn inner(&self) -> &[EncItem] {
         &self.vs
     }
 }
