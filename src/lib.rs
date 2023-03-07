@@ -2,6 +2,7 @@ pub mod batcher;
 pub mod comparator;
 pub mod context;
 pub mod keyswitch;
+pub mod codec;
 
 pub use batcher::*;
 pub use comparator::*;

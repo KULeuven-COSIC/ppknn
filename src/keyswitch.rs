@@ -138,6 +138,18 @@ pub fn lwe_to_glwe_keyswitch(
     out
 }
 
+pub(crate) fn decode_u64(x: u64, params: Parameters) -> u64 {
+    let delta = (1_u64 << 63)
+        / (params.message_modulus.0 * params.carry_modulus.0)
+        as u64;
+
+    //The bit before the message
+    let rounding_bit = delta >> 1;
+
+    let rounding = (x & rounding_bit) << 1;
+    (x.wrapping_add(rounding)) / delta
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -175,7 +187,9 @@ mod test {
             PlaintextCount(client_key.parameters.polynomial_size.0),
         );
         decrypt_glwe_ciphertext(client_key.get_glwe_sk_ref(), &glwe, &mut out);
-        // TODO decode
+        out.as_mut().iter_mut().for_each(|x| {
+            *x = decode_u64(*x, client_key.parameters);
+        });
         println!("pt: {:?}", out);
     }
 
