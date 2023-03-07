@@ -47,7 +47,7 @@ impl LWEtoGLWEKeyswitchKey {
     }
 }
 
-fn polynomial_wrapping_add_mul_const_assign<Scalar, OutputCont, InputCont>(
+pub(crate) fn polynomial_wrapping_add_mul_const_assign<Scalar, OutputCont, InputCont>(
     output: &mut Polynomial<OutputCont>,
     poly: &Polynomial<InputCont>,
     k: Scalar,
@@ -56,6 +56,7 @@ fn polynomial_wrapping_add_mul_const_assign<Scalar, OutputCont, InputCont>(
     OutputCont: ContainerMut<Element = Scalar>,
     InputCont: Container<Element = Scalar>,
 {
+    assert_eq!(output.polynomial_size(), poly.polynomial_size());
     output
         .as_mut()
         .iter_mut()
@@ -65,7 +66,7 @@ fn polynomial_wrapping_add_mul_const_assign<Scalar, OutputCont, InputCont>(
         });
 }
 
-fn polynomial_wrapping_sub_mul_const_assign<Scalar, OutputCont, InputCont>(
+pub(crate) fn polynomial_wrapping_sub_mul_const_assign<Scalar, OutputCont, InputCont>(
     output: &mut Polynomial<OutputCont>,
     poly: &Polynomial<InputCont>,
     k: Scalar,
@@ -74,6 +75,7 @@ fn polynomial_wrapping_sub_mul_const_assign<Scalar, OutputCont, InputCont>(
     OutputCont: ContainerMut<Element = Scalar>,
     InputCont: Container<Element = Scalar>,
 {
+    assert_eq!(output.polynomial_size(), poly.polynomial_size());
     output
         .as_mut()
         .iter_mut()
@@ -142,6 +144,23 @@ mod test {
     use crate::context::*;
     use tfhe::core_crypto::algorithms::glwe_encryption::decrypt_glwe_ciphertext;
     use tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_0;
+
+    #[test]
+    fn test_poly_arith() {
+        let n = 10usize;
+        {
+            let mut out = Polynomial::new(1u64, PolynomialSize(n));
+            let poly = Polynomial::new(2u64, PolynomialSize(n));
+            polynomial_wrapping_add_mul_const_assign(&mut out, &poly, 3u64);
+            assert_eq!(vec![7u64; n], out.into_container());
+        }
+        {
+            let mut out = Polynomial::new(8u64, PolynomialSize(n));
+            let poly = Polynomial::new(3u64, PolynomialSize(n));
+            polynomial_wrapping_sub_mul_const_assign(&mut out, &poly, 3u64);
+            assert_eq!(vec![u64::MAX; n], out.into_container());
+        }
+    }
 
     #[test]
     fn test_lwe_to_glwe() {
