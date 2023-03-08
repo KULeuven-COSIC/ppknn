@@ -155,7 +155,8 @@ mod test {
             assert_eq!(output_plaintext, expected);
         }
 
-        // we need to do acc = ct_after * (X^0 + ... + X^{N-1})
+        // we need to set the accumulator to be: ct_after * (X^0 + ... + X^{N-1})
+        // where ct_after is an encryption of `pt`
         let poly_ones = Polynomial::from_container(vec![1u64; server.params.polynomial_size.0]);
         let mut glwe_acc = GlweCiphertextOwned::new(
             0u64,
@@ -180,10 +181,10 @@ mod test {
         );
         let acc = Accumulator {
             acc: glwe_acc,
-            degree: Degree(10),
+            degree: Degree(10), // NOTE: degree doesn't seem to matter
         };
 
-        // now we do pbs and the result should always be 2 (`pt`)
+        // now we do pbs and the result should always be `pt`
         // doesn't matter what the ct is or the encoding, so we use the shortint encrypt function
         let ct = client.key.encrypt(1);
         let res = server.key.keyswitch_programmable_bootstrap(&ct, &acc);
