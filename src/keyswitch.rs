@@ -4,6 +4,7 @@ use tfhe::core_crypto::entities::{
     GlweCiphertextOwned, LweCiphertextOwned, PlaintextList, Polynomial,
 };
 use tfhe::core_crypto::prelude::*;
+use tfhe::core_crypto::prelude::slice_algorithms::{slice_wrapping_add_scalar_mul_assign, slice_wrapping_sub_scalar_mul_assign};
 use tfhe::shortint::prelude::Parameters;
 use crate::context::Context;
 
@@ -57,8 +58,9 @@ impl LWEtoGLWEKeyswitchKey {
             let glev: Vec<GlweCiphertextOwned<u64>> = (1..=params.ks_level.0)
                 .into_iter()
                 .map(|level| {
+                    assert!(*elt == 0 || *elt == 1);
                     let shift: usize = (u64::BITS as usize) - params.ks_base_log.0 * level;
-                    let message = (1 << shift) * *elt as u64;
+                    let message = *elt << shift;
                     let plaintext_list = PlaintextList::from_container({
                         let mut tmp = vec![0u64; params.polynomial_size.0];
                         tmp[0] = message;
@@ -85,44 +87,6 @@ impl LWEtoGLWEKeyswitchKey {
     }
 }
 
-pub(crate) fn polynomial_wrapping_add_mul_const_assign<Scalar, OutputCont, InputCont>(
-    output: &mut Polynomial<OutputCont>,
-    poly: &Polynomial<InputCont>,
-    k: Scalar,
-) where
-    Scalar: UnsignedInteger,
-    OutputCont: ContainerMut<Element = Scalar>,
-    InputCont: Container<Element = Scalar>,
-{
-    assert_eq!(output.polynomial_size(), poly.polynomial_size());
-    output
-        .as_mut()
-        .iter_mut()
-        .zip(poly.iter())
-        .for_each(|(out, p)| {
-            *out = out.wrapping_add(p.wrapping_mul(k));
-        });
-}
-
-pub(crate) fn polynomial_wrapping_sub_mul_const_assign<Scalar, OutputCont, InputCont>(
-    output: &mut Polynomial<OutputCont>,
-    poly: &Polynomial<InputCont>,
-    k: Scalar,
-) where
-    Scalar: UnsignedInteger,
-    OutputCont: ContainerMut<Element = Scalar>,
-    InputCont: Container<Element = Scalar>,
-{
-    assert_eq!(output.polynomial_size(), poly.polynomial_size());
-    output
-        .as_mut()
-        .iter_mut()
-        .zip(poly.iter())
-        .for_each(|(out, p)| {
-            *out = out.wrapping_sub(p.wrapping_mul(k));
-        });
-}
-
 pub fn lwe_to_glwe_keyswitch(
     ksks: &LWEtoGLWEKeyswitchKey,
     lwe: &LweCiphertextOwned<u64>,
@@ -133,7 +97,7 @@ pub fn lwe_to_glwe_keyswitch(
 
     let params = ksks.params;
     let mut out = GlweCiphertextOwned::new(
-        0,
+        0u64,
         params.glwe_dimension.to_glwe_size(),
         params.polynomial_size,
     );
@@ -146,19 +110,22 @@ pub fn lwe_to_glwe_keyswitch(
         // since the decomposer is "reversed", we need to reverse the order of glev
         for (ksk, decomposed_a) in glev.iter().rev().zip(decomposer_iter) {
             // c[1] += < g^-1(a_i), ksk_i[1] >
+            assert_eq!(out.get_mask().as_polynomial_list().polynomial_count().0, 1);
             out.get_mut_mask()
                 .as_mut_polynomial_list()
                 .iter_mut()
-                .for_each(|mut poly| {
-                    polynomial_wrapping_add_mul_const_assign(
-                        &mut poly,
+                .for_each(|mut c1| {
+                    slice_wrapping_add_scalar_mul_assign(
+                        // polynomial_wrapping_add_mul_const_assign(
+                        &mut c1,
                         &ksk.get_mask().as_polynomial_list().get(0),
                         decomposed_a.value(),
                     );
                 });
 
             // c[2] -= < g^-1(a_i), ksk_i[2] >
-            polynomial_wrapping_sub_mul_const_assign(
+            slice_wrapping_sub_scalar_mul_assign(
+            // polynomial_wrapping_sub_mul_const_assign(
                 &mut out.get_mut_body().as_mut_polynomial(),
                 &ksk.get_body().as_polynomial(),
                 decomposed_a.value(),
@@ -203,20 +170,21 @@ mod test {
     };
 
     #[test]
-    fn test_poly_arith() {
-        let n = 10usize;
-        {
-            let mut out = Polynomial::new(1u64, PolynomialSize(n));
-            let poly = Polynomial::new(2u64, PolynomialSize(n));
-            polynomial_wrapping_add_mul_const_assign(&mut out, &poly, 3u64);
-            assert_eq!(vec![7u64; n], out.into_container());
-        }
-        {
-            let mut out = Polynomial::new(8u64, PolynomialSize(n));
-            let poly = Polynomial::new(3u64, PolynomialSize(n));
-            polynomial_wrapping_sub_mul_const_assign(&mut out, &poly, 3u64);
-            assert_eq!(vec![u64::MAX; n], out.into_container());
-        }
+    fn test_decomposition() {
+        let ctx = Context::new(TEST_PARAM);
+        // test < g^{-1}(a), (s * g^0, ..., s * g^{l-1} > ~= a*s >
+        let a = (1 << 40) + (1 << 42) + (1 << 50);
+        let s = 3u64;
+        let decomposer = SignedDecomposer::new(ctx.params.ks_base_log, ctx.params.ks_level);
+        let closest = decomposer.closest_representable(a);
+        let decomposer_iter = decomposer.decompose(closest);
+        let out = (1..=ctx.params.ks_level.0).into_iter().rev().zip(decomposer_iter).map(|(level, term)| {
+            assert_eq!(term.level().0, level);
+            let shift: usize = (u64::BITS as usize) - ctx.params.ks_base_log.0 * level;
+            println!("value={}, shift={}", term.value(), shift);
+            (term.value() << shift) * s
+        }).sum();
+        assert_eq!(a*s, out);
     }
 
     #[test]
@@ -225,19 +193,25 @@ mod test {
         let lwe_sk = ctx.gen_lwe_sk();
         let glwe_sk = ctx.gen_glwe_sk();
         let ksk = LWEtoGLWEKeyswitchKey::from_lwe_glwe_sk(&lwe_sk, &glwe_sk, &mut ctx);
-        let ct = lwe_encode_encrypt(&lwe_sk, &mut ctx, 0);
+        let m = 1u64;
+        let ct_before = lwe_encode_encrypt(&lwe_sk, &mut ctx, m);
         assert_eq!(ksk.inner.len(), lwe_sk.as_ref().len());
 
-        let glwe = lwe_to_glwe_keyswitch(&ksk, &ct);
+        let ct_after = lwe_to_glwe_keyswitch(&ksk, &ct_before);
         let mut out = PlaintextList::new(
             0u64,
             PlaintextCount(ctx.params.polynomial_size.0),
         );
-        decrypt_glwe_ciphertext(&glwe_sk, &glwe, &mut out);
+        decrypt_glwe_ciphertext(&glwe_sk, &ct_after, &mut out);
         out.as_mut().iter_mut().for_each(|x| {
             ctx.codec.decode(x);
         });
-        println!("pt: {:?}", out);
+
+        assert_eq!(out, PlaintextList::from_container({
+            let mut tmp = vec![0u64; ctx.params.polynomial_size.0];
+            tmp[0] = m;
+            tmp
+        }));
     }
 
     #[test]
