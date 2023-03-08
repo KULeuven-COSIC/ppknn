@@ -64,8 +64,7 @@ impl LWEtoGLWEKeyswitchKey {
                         tmp[0] = message;
                         tmp
                     });
-                    allocate_and_trivially_encrypt_new_glwe_ciphertext(params.glwe_dimension.to_glwe_size(), &plaintext_list)
-                        /*
+                    // allocate_and_trivially_encrypt_new_glwe_ciphertext(params.glwe_dimension.to_glwe_size(), &plaintext_list)
                     let mut glwe = GlweCiphertext::new(
                         0u64,
                         params.glwe_dimension.to_glwe_size(),
@@ -78,7 +77,6 @@ impl LWEtoGLWEKeyswitchKey {
                         &mut ctx.encryption_rng,
                     );
                     glwe
-                         */
                 })
                 .collect();
             out.push(glev);
@@ -183,7 +181,26 @@ mod test {
     use super::*;
     use crate::context::*;
     use tfhe::core_crypto::algorithms::glwe_encryption::decrypt_glwe_ciphertext;
-    use tfhe::shortint::parameters::PARAM_MESSAGE_1_CARRY_0;
+    use tfhe::shortint::prelude::{MessageModulus,CarryModulus};
+
+    const TEST_PARAM: Parameters = Parameters {
+        lwe_dimension: LweDimension(742),
+        glwe_dimension: GlweDimension(1),
+        polynomial_size: PolynomialSize(2048),
+        lwe_modular_std_dev: StandardDev(0.000007069849454709433),
+        glwe_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
+        pbs_base_log: DecompositionBaseLog(23),
+        pbs_level: DecompositionLevelCount(1),
+        ks_level: DecompositionLevelCount(15),
+        ks_base_log: DecompositionBaseLog(2),
+        pfks_level: DecompositionLevelCount(15),
+        pfks_base_log: DecompositionBaseLog(2),
+        pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
+        cbs_level: DecompositionLevelCount(0),
+        cbs_base_log: DecompositionBaseLog(0),
+        message_modulus: MessageModulus(2),
+        carry_modulus: CarryModulus(1),
+    };
 
     #[test]
     fn test_poly_arith() {
@@ -204,8 +221,7 @@ mod test {
 
     #[test]
     fn test_lwe_to_glwe() {
-        // let (client_key, server_key) = gen_keys(PARAM_MESSAGE_2_CARRY_0);
-        let mut ctx = Context::new(PARAM_MESSAGE_1_CARRY_0);
+        let mut ctx = Context::new(TEST_PARAM);
         let lwe_sk = ctx.gen_lwe_sk();
         let glwe_sk = ctx.gen_glwe_sk();
         let ksk = LWEtoGLWEKeyswitchKey::from_lwe_glwe_sk(&lwe_sk, &glwe_sk, &mut ctx);
@@ -224,10 +240,9 @@ mod test {
         println!("pt: {:?}", out);
     }
 
-    /*
     #[test]
-    fn test_lwe_to_glwe2() {
-        let mut ctx = Context::new(PARAM_MESSAGE_2_CARRY_0);
+    fn test_functional_keyswitch() {
+        let mut ctx = Context::new(TEST_PARAM);
         let lwe_sk = ctx.gen_lwe_sk();
         let glwe_sk = ctx.gen_glwe_sk();
 
@@ -243,6 +258,24 @@ mod test {
         let mut last_polynomial = Polynomial::new(0, ctx.params.polynomial_size);
         last_polynomial[0] = u64::MAX;
 
+        // setup the plaintext and encrypt
+        let mut m = 0u64;
+        ctx.codec.encode(&mut m);
+        let plaintext_list = PlaintextList::from_container(vec![m]);
+        let mut lwe_ciphertext_list = LweCiphertextList::new(
+            0u64,
+            ctx.params.lwe_dimension.to_lwe_size(),
+            LweCiphertextCount(plaintext_list.plaintext_count().0),
+        );
+        encrypt_lwe_ciphertext_list(
+            &lwe_sk,
+            &mut lwe_ciphertext_list,
+            &plaintext_list,
+            ctx.params.lwe_modular_std_dev,
+            &mut ctx.encryption_rng,
+        );
+
+        // generate ksk
         par_generate_lwe_private_functional_packing_keyswitch_key(
             &lwe_sk,
             &glwe_sk,
@@ -258,6 +291,23 @@ mod test {
             ctx.params.glwe_dimension.to_glwe_size(),
             ctx.params.polynomial_size,
         );
+
+        // NOTE: what if we try `private_functional_keyswitch_lwe_ciphertext_into_glwe_ciphertext`?
+        private_functional_keyswitch_lwe_ciphertext_list_and_pack_in_glwe_ciphertext(
+            &pfpksk,
+            &mut output_glwe,
+            &lwe_ciphertext_list,
+        );
+
+        let mut output_plaintext = PlaintextList::new(0, PlaintextCount(ctx.params.polynomial_size.0));
+        decrypt_glwe_ciphertext(&glwe_sk, &output_glwe, &mut output_plaintext);
+        output_plaintext.iter_mut().for_each(|mut x| {
+            ctx.codec.decode(&mut x.0);
+        });
+        assert_eq!(output_plaintext, PlaintextList::from_container({
+            let mut tmp = vec![0u64; ctx.params.polynomial_size.0];
+            tmp[0] = m;
+            tmp
+        }));
     }
-     */
 }
