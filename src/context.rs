@@ -10,6 +10,7 @@ pub struct Context {
 }
 
 impl Context {
+    // note that the carry modulus is ignored
     pub fn new(params: Parameters) -> Self {
         let mut seeder = new_seeder();
         Self {
@@ -50,6 +51,6 @@ pub fn lwe_encode_encrypt(sk: &LweSecretKeyOwned<u64>, ctx: &mut Context, x: u64
 
 pub fn lwe_decrypt_decode(sk: &LweSecretKeyOwned<u64>, ctx: &Context, ct: &LweCiphertextOwned<u64>) -> u64 {
     let mut pt = decrypt_lwe_ciphertext(sk, ct).0;
-    ctx.codec.decode(&mut x);
+    ctx.codec.decode(&mut pt);
     pt
 }

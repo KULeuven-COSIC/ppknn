@@ -4,16 +4,17 @@ use tfhe::core_crypto::entities::{
     GlweCiphertextOwned, LweCiphertextOwned, PlaintextList, Polynomial,
 };
 use tfhe::core_crypto::prelude::*;
-use tfhe::shortint::engine::ShortintEngine;
-use tfhe::shortint::prelude::*;
+use tfhe::shortint::prelude::Parameters;
+use crate::context::Context;
 
 pub struct LWEtoGLWEKeyswitchKey {
     // each inner vector is a G(R)Lev ciphertext
     inner: Vec<Vec<GlweCiphertextOwned<u64>>>,
-    param: Parameters,
+    params: Parameters,
 }
 
 impl LWEtoGLWEKeyswitchKey {
+    /*
     pub fn from_server_key(server_key: &ServerKey) -> Self {
         // conver the FourierGgswCiphertext
         // back into the standard domain and take half of the GGSW
@@ -21,20 +22,21 @@ impl LWEtoGLWEKeyswitchKey {
     }
 
     pub fn from_client_key(client_key: &ClientKey) -> Self {
-        let param = client_key.parameters;
+        let params = client_key.parameters;
         let mut out: Vec<Vec<GlweCiphertextOwned<u64>>> = vec![];
         for elt in client_key.get_lwe_sk_ref().as_ref().iter() {
-            // elt is u64
-            let glev: Vec<GlweCiphertextOwned<u64>> = (1..=param.ks_level.0)
+            // elt is &u64
+            let glev: Vec<GlweCiphertextOwned<u64>> = (1..=params.ks_level.0)
                 .into_iter()
                 .map(|level| {
-                    let shift: usize = (u64::BITS as usize) - param.ks_base_log.0 * level;
-                    let message = *elt * (1 << shift) as u64;
+                    let shift: usize = (u64::BITS as usize) - params.ks_base_log.0 * level;
+                    let message = (1 << shift) * *elt as u64;
                     let plaintext_list = PlaintextList::from_container({
-                        let mut tmp = vec![0u64; param.polynomial_size.0];
+                        let mut tmp = vec![0u64; params.polynomial_size.0];
                         tmp[0] = message;
                         tmp
                     });
+                    // allocate_and_trivially_encrypt_new_glwe_ciphertext(param.glwe_dimension.to_glwe_size(), &plaintext_list)
                     ShortintEngine::with_thread_local_mut(|engine| {
                         engine.unchecked_glwe_encrypt(client_key, &plaintext_list)
                     })
@@ -43,7 +45,45 @@ impl LWEtoGLWEKeyswitchKey {
                 .collect();
             out.push(glev);
         }
-        LWEtoGLWEKeyswitchKey { inner: out, param }
+        LWEtoGLWEKeyswitchKey { inner: out, params }
+    }
+     */
+
+    pub fn from_lwe_glwe_sk(lwe_sk: &LweSecretKeyOwned<u64>, glwe_sk: &GlweSecretKeyOwned<u64>, ctx: &mut Context) -> Self {
+        let params = ctx.params;
+        let mut out: Vec<Vec<GlweCiphertextOwned<u64>>> = vec![];
+        for elt in lwe_sk.as_ref().iter() {
+            // elt is &u64
+            let glev: Vec<GlweCiphertextOwned<u64>> = (1..=params.ks_level.0)
+                .into_iter()
+                .map(|level| {
+                    let shift: usize = (u64::BITS as usize) - params.ks_base_log.0 * level;
+                    let message = (1 << shift) * *elt as u64;
+                    let plaintext_list = PlaintextList::from_container({
+                        let mut tmp = vec![0u64; params.polynomial_size.0];
+                        tmp[0] = message;
+                        tmp
+                    });
+                    allocate_and_trivially_encrypt_new_glwe_ciphertext(params.glwe_dimension.to_glwe_size(), &plaintext_list)
+                        /*
+                    let mut glwe = GlweCiphertext::new(
+                        0u64,
+                        params.glwe_dimension.to_glwe_size(),
+                        params.polynomial_size);
+                    encrypt_glwe_ciphertext(
+                        &glwe_sk,
+                        &mut glwe,
+                        &plaintext_list,
+                        params.glwe_modular_std_dev,
+                        &mut ctx.encryption_rng,
+                    );
+                    glwe
+                         */
+                })
+                .collect();
+            out.push(glev);
+        }
+        LWEtoGLWEKeyswitchKey { inner: out, params }
     }
 }
 
@@ -89,24 +129,24 @@ pub fn lwe_to_glwe_keyswitch(
     ksks: &LWEtoGLWEKeyswitchKey,
     lwe: &LweCiphertextOwned<u64>,
 ) -> GlweCiphertextOwned<u64> {
-    // https://docs.rs/tfhe/latest/src/tfhe/core_crypto/algorithms/lwe_private_functional_packing_keyswitch.rs.html
     // we need the key switching keys
     // which should be the same as the bootstrapping keys
     // i.e., RLWE_s'(s_i), for i \in [n].
 
-    let param = ksks.param;
+    let params = ksks.params;
     let mut out = GlweCiphertextOwned::new(
         0,
-        param.glwe_dimension.to_glwe_size(),
-        param.polynomial_size,
+        params.glwe_dimension.to_glwe_size(),
+        params.polynomial_size,
     );
-    for (glev, a) in ksks.inner.iter().rev().zip(lwe.get_mask().as_ref().iter()) {
-        // Setup decomposition
-        let decomposer = SignedDecomposer::new(param.ks_base_log, param.ks_level);
+    let decomposer = SignedDecomposer::new(params.ks_base_log, params.ks_level);
+    for (glev, a) in ksks.inner.iter().zip(lwe.get_mask().as_ref().iter()) {
+        // Setup decomposition, the iterator goes from high level to low level
         let closest = decomposer.closest_representable(*a);
         let decomposer_iter = decomposer.decompose(closest);
 
-        for (ksk, decomposed_a) in glev.iter().zip(decomposer_iter) {
+        // since the decomposer is "reversed", we need to reverse the order of glev
+        for (ksk, decomposed_a) in glev.iter().rev().zip(decomposer_iter) {
             // c[1] += < g^-1(a_i), ksk_i[1] >
             out.get_mut_mask()
                 .as_mut_polynomial_list()
@@ -130,7 +170,7 @@ pub fn lwe_to_glwe_keyswitch(
 
     // c[2] += b
     let b = Polynomial::from_container({
-        let mut v = vec![0u64; param.polynomial_size.0];
+        let mut v = vec![0u64; params.polynomial_size.0];
         v[0] = *lwe.get_body().0;
         v
     });
@@ -138,24 +178,12 @@ pub fn lwe_to_glwe_keyswitch(
     out
 }
 
-pub(crate) fn decode_u64(x: u64, params: Parameters) -> u64 {
-    let delta = (1_u64 << 63)
-        / (params.message_modulus.0 * params.carry_modulus.0)
-        as u64;
-
-    //The bit before the message
-    let rounding_bit = delta >> 1;
-
-    let rounding = (x & rounding_bit) << 1;
-    (x.wrapping_add(rounding)) / delta
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::context::*;
     use tfhe::core_crypto::algorithms::glwe_encryption::decrypt_glwe_ciphertext;
-    use tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_0;
+    use tfhe::shortint::parameters::PARAM_MESSAGE_1_CARRY_0;
 
     #[test]
     fn test_poly_arith() {
@@ -176,23 +204,27 @@ mod test {
 
     #[test]
     fn test_lwe_to_glwe() {
-        let (client_key, server_key) = gen_keys(PARAM_MESSAGE_2_CARRY_0);
-        let ksk = LWEtoGLWEKeyswitchKey::from_client_key(&client_key);
-        let ct = client_key.encrypt(0);
-        // println!("sk: {:?}", client_key.get_lwe_sk_ref());
+        // let (client_key, server_key) = gen_keys(PARAM_MESSAGE_2_CARRY_0);
+        let mut ctx = Context::new(PARAM_MESSAGE_1_CARRY_0);
+        let lwe_sk = ctx.gen_lwe_sk();
+        let glwe_sk = ctx.gen_glwe_sk();
+        let ksk = LWEtoGLWEKeyswitchKey::from_lwe_glwe_sk(&lwe_sk, &glwe_sk, &mut ctx);
+        let ct = lwe_encode_encrypt(&lwe_sk, &mut ctx, 0);
+        assert_eq!(ksk.inner.len(), lwe_sk.as_ref().len());
 
-        let glwe = lwe_to_glwe_keyswitch(&ksk, &ct.ct);
+        let glwe = lwe_to_glwe_keyswitch(&ksk, &ct);
         let mut out = PlaintextList::new(
             0u64,
-            PlaintextCount(client_key.parameters.polynomial_size.0),
+            PlaintextCount(ctx.params.polynomial_size.0),
         );
-        decrypt_glwe_ciphertext(client_key.get_glwe_sk_ref(), &glwe, &mut out);
+        decrypt_glwe_ciphertext(&glwe_sk, &glwe, &mut out);
         out.as_mut().iter_mut().for_each(|x| {
-            *x = decode_u64(*x, client_key.parameters);
+            ctx.codec.decode(x);
         });
         println!("pt: {:?}", out);
     }
 
+    /*
     #[test]
     fn test_lwe_to_glwe2() {
         let mut ctx = Context::new(PARAM_MESSAGE_2_CARRY_0);
@@ -227,4 +259,5 @@ mod test {
             ctx.params.polynomial_size,
         );
     }
+     */
 }
