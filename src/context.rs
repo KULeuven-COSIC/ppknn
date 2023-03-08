@@ -40,6 +40,31 @@ impl Context {
         );
         glwe_sk
     }
+
+    pub fn gen_ksk(&mut self, lwe_sk: &LweSecretKeyOwned<u64>, glwe_sk: &GlweSecretKeyOwned<u64>) -> LwePrivateFunctionalPackingKeyswitchKeyOwned<u64> {
+        let mut pfpksk = LwePrivateFunctionalPackingKeyswitchKey::new(
+            0,
+            self.params.pfks_base_log,
+            self.params.pfks_level,
+            lwe_sk.lwe_dimension(),
+            self.params.glwe_dimension.to_glwe_size(),
+            self.params.polynomial_size,
+        );
+
+        let mut last_polynomial = Polynomial::new(0, self.params.polynomial_size);
+        last_polynomial[0] = u64::MAX;
+
+        par_generate_lwe_private_functional_packing_keyswitch_key(
+            &lwe_sk,
+            &glwe_sk,
+            &mut pfpksk,
+            self.params.pfks_modular_std_dev,
+            &mut self.encryption_rng,
+            |x| x.wrapping_neg(),
+            &last_polynomial,
+        );
+        pfpksk
+    }
 }
 
 pub fn lwe_encode_encrypt(sk: &LweSecretKeyOwned<u64>, ctx: &mut Context, x: u64) -> LweCiphertextOwned<u64> {
