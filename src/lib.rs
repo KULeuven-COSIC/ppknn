@@ -10,8 +10,13 @@ pub use comparator::*;
 use crate::context::{lwe_decrypt_decode, lwe_encode_encrypt, Context};
 use std::fs;
 use std::io::Cursor;
+use tfhe::core_crypto::prelude::polynomial_algorithms::{
+    polynomial_wrapping_add_assign, polynomial_wrapping_mul,
+};
 use tfhe::core_crypto::prelude::*;
+use tfhe::shortint::ciphertext::Degree;
 use tfhe::shortint::prelude::*;
+use tfhe::shortint::server_key::Accumulator;
 
 const DUMMY_KEY: &str = "dummy_key";
 
@@ -63,6 +68,76 @@ impl KnnServer {
 
         output_glwe
     }
+
+    pub(crate) fn polynomial_glwe_mul(
+        &self,
+        glwe: &GlweCiphertextOwned<u64>,
+        poly: &PolynomialOwned<u64>,
+    ) -> GlweCiphertextOwned<u64> {
+        let mut out = GlweCiphertextOwned::new(
+            0u64,
+            self.params.glwe_dimension.to_glwe_size(),
+            self.params.polynomial_size,
+        );
+        out.get_mut_mask()
+            .as_mut_polynomial_list()
+            .iter_mut()
+            .for_each(|mut mask| {
+                polynomial_wrapping_mul(
+                    &mut mask,
+                    &glwe.get_mask().as_polynomial_list().get(0),
+                    &poly,
+                );
+            });
+        polynomial_wrapping_mul(
+            &mut out.get_mut_body().as_mut_polynomial(),
+            &glwe.get_body().as_polynomial(),
+            &poly,
+        );
+        out
+    }
+
+    pub fn double_ct_acc(
+        &self,
+        left_lwe: &LweCiphertextOwned<u64>,
+        right_lwe: &LweCiphertextOwned<u64>,
+    ) -> Accumulator {
+        // first key switch the LWE ciphertexts to GLWE
+        let left_glwe = self.lwe_to_glwe(&left_lwe);
+        let right_glwe = self.lwe_to_glwe(&right_lwe);
+
+        let half_n = self.params.polynomial_size.0 / 2;
+        // left polynomial has the form X^0 + ... + X^{N/2-1}
+        let left_poly = Polynomial::from_container({
+            vec![1u64; half_n]
+                .into_iter()
+                .chain(vec![0u64; half_n])
+                .collect::<Vec<_>>()
+        });
+        // right polynomial has the form X^{N/2} + ... + X^{N-1}
+        let right_poly = Polynomial::from_container({
+            vec![0u64; half_n]
+                .into_iter()
+                .chain(vec![1u64; half_n])
+                .collect::<Vec<_>>()
+        });
+
+        // create the two halves of the accumulator
+        let mut left_acc = self.polynomial_glwe_mul(&left_glwe, &left_poly);
+        let right_acc = self.polynomial_glwe_mul(&right_glwe, &right_poly);
+
+        // sum the two halves into the left one
+        left_acc
+            .as_mut_polynomial_list()
+            .iter_mut()
+            .zip(right_acc.as_polynomial_list().iter())
+            .for_each(|(mut left, right)| polynomial_wrapping_add_assign(&mut left, &right));
+
+        Accumulator {
+            acc: left_acc,
+            degree: Degree(10),
+        }
+    }
 }
 
 pub struct KnnClient {
@@ -100,9 +175,7 @@ pub fn setup(params: Parameters) -> (KnnServer, KnnClient) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tfhe::core_crypto::algorithms::polynomial_algorithms::polynomial_wrapping_mul;
     use tfhe::shortint::ciphertext::Degree;
-    use tfhe::shortint::parameters::PARAM_MESSAGE_3_CARRY_0;
     use tfhe::shortint::server_key::Accumulator;
 
     pub(crate) const TEST_PARAM: Parameters = Parameters {
@@ -158,27 +231,7 @@ mod test {
         // we need to set the accumulator to be: ct_after * (X^0 + ... + X^{N-1})
         // where ct_after is an encryption of `pt`
         let poly_ones = Polynomial::from_container(vec![1u64; server.params.polynomial_size.0]);
-        let mut glwe_acc = GlweCiphertextOwned::new(
-            0u64,
-            server.params.glwe_dimension.to_glwe_size(),
-            server.params.polynomial_size,
-        );
-        glwe_acc
-            .get_mut_mask()
-            .as_mut_polynomial_list()
-            .iter_mut()
-            .for_each(|mut mask| {
-                polynomial_wrapping_mul(
-                    &mut mask,
-                    &ct_after.get_mask().as_polynomial_list().get(0),
-                    &poly_ones,
-                );
-            });
-        polynomial_wrapping_mul(
-            &mut glwe_acc.get_mut_body().as_mut_polynomial(),
-            &ct_after.get_body().as_polynomial(),
-            &poly_ones,
-        );
+        let glwe_acc = server.polynomial_glwe_mul(&ct_after, &poly_ones);
         let acc = Accumulator {
             acc: glwe_acc,
             degree: Degree(10), // NOTE: degree doesn't seem to matter
@@ -195,7 +248,7 @@ mod test {
     #[test]
     fn test_enc_sort() {
         {
-            let (client_key, server_key) = read_or_gen_keys(PARAM_MESSAGE_3_CARRY_0);
+            let (client_key, server_key) = gen_keys(TEST_PARAM);
             let pt_vec = vec![(1, 1), (0, 0), (2, 2), (3u64, 3u64)];
             let enc_cmp = EncCmp::boxed(
                 enc_vec(&pt_vec, &client_key),
@@ -210,7 +263,7 @@ mod test {
             assert_eq!(output, (0, 0));
         }
         {
-            let (client_key, server_key) = read_or_gen_keys(PARAM_MESSAGE_3_CARRY_0);
+            let (client_key, server_key) = gen_keys(TEST_PARAM);
             let pt_vec = vec![(2, 2), (2, 2), (1, 1), (3u64, 3u64)];
             let enc_cmp = EncCmp::boxed(
                 enc_vec(&pt_vec, &client_key),
@@ -225,7 +278,7 @@ mod test {
             assert_eq!(output, (1, 1));
         }
         {
-            let (client_key, server_key) = read_or_gen_keys(PARAM_MESSAGE_3_CARRY_0);
+            let (client_key, server_key) = gen_keys(TEST_PARAM);
             let pt_vec = vec![(1, 1), (2, 2), (3u64, 3u64), (0, 0)];
             let enc_cmp = EncCmp::boxed(
                 enc_vec(&pt_vec, &client_key),
