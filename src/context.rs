@@ -1,6 +1,6 @@
+use crate::codec::Codec;
 use tfhe::core_crypto::prelude::*;
 use tfhe::shortint::prelude::*;
-use crate::codec::Codec;
 
 pub struct Context {
     pub params: Parameters,
@@ -41,7 +41,11 @@ impl Context {
         glwe_sk
     }
 
-    pub fn gen_ksk(&mut self, lwe_sk: &LweSecretKeyOwned<u64>, glwe_sk: &GlweSecretKeyOwned<u64>) -> LwePrivateFunctionalPackingKeyswitchKeyOwned<u64> {
+    pub fn gen_ksk(
+        &mut self,
+        lwe_sk: &LweSecretKeyOwned<u64>,
+        glwe_sk: &GlweSecretKeyOwned<u64>,
+    ) -> LwePrivateFunctionalPackingKeyswitchKeyOwned<u64> {
         let mut pfpksk = LwePrivateFunctionalPackingKeyswitchKey::new(
             0,
             self.params.pfks_base_log,
@@ -67,11 +71,20 @@ impl Context {
     }
 }
 
-pub fn lwe_encode_encrypt(sk: &LweSecretKeyOwned<u64>, ctx: &mut Context, x: u64) -> LweCiphertextOwned<u64> {
+pub fn lwe_encode_encrypt(
+    sk: &LweSecretKeyOwned<u64>,
+    ctx: &mut Context,
+    x: u64,
+) -> LweCiphertextOwned<u64> {
     let mut x_copy = x;
     ctx.codec.encode(&mut x_copy);
     let pt = Plaintext(x_copy);
-    allocate_and_encrypt_new_lwe_ciphertext(sk, pt, ctx.params.lwe_modular_std_dev, &mut ctx.encryption_rng)
+    allocate_and_encrypt_new_lwe_ciphertext(
+        sk,
+        pt,
+        ctx.params.lwe_modular_std_dev,
+        &mut ctx.encryption_rng,
+    )
     /*
     let mut lwe = LweCiphertext::new(0u64, ctx.params.lwe_dimension.to_lwe_size());
     trivially_encrypt_lwe_ciphertext(&mut lwe, pt);
@@ -79,7 +92,11 @@ pub fn lwe_encode_encrypt(sk: &LweSecretKeyOwned<u64>, ctx: &mut Context, x: u64
      */
 }
 
-pub fn lwe_decrypt_decode(sk: &LweSecretKeyOwned<u64>, ctx: &Context, ct: &LweCiphertextOwned<u64>) -> u64 {
+pub fn lwe_decrypt_decode(
+    sk: &LweSecretKeyOwned<u64>,
+    ctx: &Context,
+    ct: &LweCiphertextOwned<u64>,
+) -> u64 {
     let mut pt = decrypt_lwe_ciphertext(sk, ct).0;
     ctx.codec.decode(&mut pt);
     pt

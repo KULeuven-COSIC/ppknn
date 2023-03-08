@@ -1,17 +1,17 @@
 pub mod batcher;
+pub mod codec;
 pub mod comparator;
 pub mod context;
 pub mod keyswitch;
-pub mod codec;
 
 pub use batcher::*;
 pub use comparator::*;
 
+use crate::context::{lwe_decrypt_decode, lwe_encode_encrypt, Context};
 use std::fs;
 use std::io::Cursor;
 use tfhe::core_crypto::prelude::*;
 use tfhe::shortint::prelude::*;
-use crate::context::{Context, lwe_decrypt_decode, lwe_encode_encrypt};
 
 const DUMMY_KEY: &str = "dummy_key";
 
@@ -84,22 +84,24 @@ pub fn setup(params: Parameters) -> (KnnServer, KnnClient) {
     let mut ctx = Context::new(params);
     let (client_key, server_key) = gen_keys(params);
     let lwe_to_glwe_ksk = ctx.gen_ksk(client_key.get_lwe_sk_ref(), client_key.get_glwe_sk_ref());
-    (KnnServer {
-        key: server_key,
-        lwe_to_glwe_ksk,
-        params
-    },
-     KnnClient {
-        key: client_key,
-        ctx,
-    })
+    (
+        KnnServer {
+            key: server_key,
+            lwe_to_glwe_ksk,
+            params,
+        },
+        KnnClient {
+            key: client_key,
+            ctx,
+        },
+    )
 }
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use tfhe::core_crypto::algorithms::polynomial_algorithms::polynomial_wrapping_mul;
     use tfhe::shortint::ciphertext::Degree;
-    use super::*;
     use tfhe::shortint::parameters::PARAM_MESSAGE_3_CARRY_0;
     use tfhe::shortint::server_key::Accumulator;
 
@@ -134,8 +136,13 @@ mod test {
 
         {
             // test the key switching
-            let mut output_plaintext = PlaintextList::new(0, PlaintextCount(server.params.polynomial_size.0));
-            decrypt_glwe_ciphertext(&client.key.get_glwe_sk_ref(), &ct_after, &mut output_plaintext);
+            let mut output_plaintext =
+                PlaintextList::new(0, PlaintextCount(server.params.polynomial_size.0));
+            decrypt_glwe_ciphertext(
+                &client.key.get_glwe_sk_ref(),
+                &ct_after,
+                &mut output_plaintext,
+            );
             output_plaintext.iter_mut().for_each(|mut x| {
                 client.ctx.codec.decode(&mut x.0);
             });
@@ -150,11 +157,27 @@ mod test {
 
         // we need to do acc = ct_after * (X^0 + ... + X^{N-1})
         let poly_ones = Polynomial::from_container(vec![1u64; server.params.polynomial_size.0]);
-        let mut glwe_acc = GlweCiphertextOwned::new(0u64, server.params.glwe_dimension.to_glwe_size(), server.params.polynomial_size);
-        glwe_acc.get_mut_mask().as_mut_polynomial_list().iter_mut().for_each(|mut mask| {
-            polynomial_wrapping_mul(&mut mask, &ct_after.get_mask().as_polynomial_list().get(0), &poly_ones);
-        });
-        polynomial_wrapping_mul(&mut glwe_acc.get_mut_body().as_mut_polynomial(), &ct_after.get_body().as_polynomial(), &poly_ones);
+        let mut glwe_acc = GlweCiphertextOwned::new(
+            0u64,
+            server.params.glwe_dimension.to_glwe_size(),
+            server.params.polynomial_size,
+        );
+        glwe_acc
+            .get_mut_mask()
+            .as_mut_polynomial_list()
+            .iter_mut()
+            .for_each(|mut mask| {
+                polynomial_wrapping_mul(
+                    &mut mask,
+                    &ct_after.get_mask().as_polynomial_list().get(0),
+                    &poly_ones,
+                );
+            });
+        polynomial_wrapping_mul(
+            &mut glwe_acc.get_mut_body().as_mut_polynomial(),
+            &ct_after.get_body().as_polynomial(),
+            &poly_ones,
+        );
         let acc = Accumulator {
             acc: glwe_acc,
             degree: Degree(10),
