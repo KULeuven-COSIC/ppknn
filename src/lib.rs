@@ -7,6 +7,7 @@ pub mod keyswitch;
 pub use batcher::*;
 pub use comparator::*;
 
+use crate::codec::Codec;
 use crate::context::{lwe_decrypt_decode, lwe_encode_encrypt, Context};
 use std::fs;
 use std::io::Cursor;
@@ -44,6 +45,20 @@ pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
     vs.iter()
         .map(|v| EncItem::new(client_key.encrypt(v.0), client_key.encrypt(v.1)))
         .collect()
+}
+
+fn trivially_encoded_ciphertext(params: Parameters, x: u64) -> Ciphertext {
+    let codec = Codec::new(params.message_modulus.0 as u64);
+    let mut lwe = LweCiphertext::new(0u64, LweSize(params.polynomial_size.0 + 1));
+    let mut encoded = x;
+    codec.encode(&mut encoded);
+    trivially_encrypt_lwe_ciphertext(&mut lwe, Plaintext(encoded));
+    Ciphertext {
+        ct: lwe,
+        degree: Degree(params.message_modulus.0 - 1),
+        message_modulus: params.message_modulus,
+        carry_modulus: params.carry_modulus,
+    }
 }
 
 pub struct KnnServer {
@@ -152,8 +167,10 @@ impl KnnServer {
     pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
         let acc = self.double_ct_acc(a, b);
 
-        // TODO may need to add t/4
-        let diff = self.key.unchecked_sub(b, a);
+        let t_over_4 =
+            trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
+        let mut diff = self.key.unchecked_sub(b, a);
+        self.key.unchecked_add_assign(&mut diff, &t_over_4);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
@@ -166,8 +183,10 @@ impl KnnServer {
     ) -> Ciphertext {
         let acc = self.double_ct_acc(i, j);
 
-        // TODO may need to add t/4
-        let diff = self.key.unchecked_sub(b, a);
+        let t_over_4 =
+            trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
+        let mut diff = self.key.unchecked_sub(b, a);
+        self.key.unchecked_add_assign(&mut diff, &t_over_4);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 }
@@ -245,6 +264,8 @@ pub fn setup(params: Parameters) -> (KnnServer, KnnClient) {
 
 #[cfg(test)]
 mod test {
+    use tfhe::core_crypto::algorithms::slice_algorithms::slice_wrapping_add;
+    use tfhe::core_crypto::prelude::slice_algorithms::slice_wrapping_sub;
     use super::*;
     use tfhe::shortint::ciphertext::Degree;
     use tfhe::shortint::server_key::Accumulator;
@@ -334,14 +355,21 @@ mod test {
     fn test_min() {
         let (server, mut client) = setup(TEST_PARAM);
         // remember we need an extra bit for the negative
-        let a_pt = 2u64;
-        let b_pt = 3u64;
+        let a_pt = 3u64;
+        let b_pt = 2u64;
         let a_ct = client.lwe_encode_encrypt(a_pt);
         let b_ct = client.lwe_encode_encrypt(b_pt);
 
         {
             // test sub is working correctly
-            let diff = server.key.unchecked_sub(&b_ct, &a_ct);
+            let mut diff = Ciphertext {
+                ct: LweCiphertextOwned::new(0u64, LweSize(server.params.polynomial_size.0 + 1)),
+                degree: Degree(server.params.message_modulus.0 - 1),
+                message_modulus: server.params.message_modulus,
+                carry_modulus: server.params.carry_modulus,
+            };
+            slice_wrapping_sub(&mut diff.ct.as_mut(), &b_ct.ct.as_ref(), &a_ct.ct.as_ref());
+            // let diff = server.key.unchecked_sub(&b_ct, &a_ct);
             let actual = client.lwe_decrypt_decode(&diff);
             let expected = b_pt.wrapping_sub(a_pt) % server.params.message_modulus.0 as u64;
             assert_eq!(actual, expected);
