@@ -214,11 +214,16 @@ impl KnnServer {
     pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
         let acc = self.double_ct_acc(a, b);
 
-        // let t_over_4 =
-        //     trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
+        // TODO: issue with unchecked_sub
         let diff = self.key.unchecked_sub(b, a);
-        // self.key.message_extract_assign(&mut diff);
-        // self.key.unchecked_add_assign(&mut diff, &t_over_4);
+        self.key.keyswitch_programmable_bootstrap(&diff, &acc)
+    }
+
+    pub fn trivially_min(&self, a_pt: u64, b_pt: u64, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
+        let acc = self.trivially_double_ct_acc(a_pt, b_pt);
+
+        // TODO: issue with unchecked_sub
+        let diff = self.key.unchecked_sub(b, a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
@@ -231,10 +236,8 @@ impl KnnServer {
     ) -> Ciphertext {
         let acc = self.double_ct_acc(i, j);
 
-        // let t_over_4 =
-        //     trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
+        // TODO: issue with unchecked_sub
         let diff = self.key.unchecked_sub(b, a);
-        // self.key.unchecked_add_assign(&mut diff, &t_over_4);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 }
@@ -441,12 +444,11 @@ mod test {
     #[test]
     fn test_double_ct_acc() {
         let (server, client) = setup(TEST_PARAM);
-        let left = 1u64;
-        let right = server.params.message_modulus.0 as u64 - 1;
+        let left = 2u64;
+        let right = 2u64; // server.params.message_modulus.0 as u64 - 1;
         // let acc = server.trivially_double_ct_acc(left, right);
         let acc = server.double_ct_acc(&client.key.encrypt(left), &client.key.encrypt(right));
         for x in 0u64..server.params.message_modulus.0 as u64 {
-            let ct = client.key.encrypt(x);
             let res = server.key.keyswitch_programmable_bootstrap(&ct, &acc);
             let actual = client.key.decrypt(&res);
             let expected = if x < server.params.message_modulus.0 as u64 / 2 {
@@ -462,12 +464,14 @@ mod test {
     #[test]
     fn test_min() {
         let (server, client) = setup(TEST_PARAM);
-        let a_pt = server.params.message_modulus.0 as u64 / 2; // 2u64;
+        // let a_pt = server.params.message_modulus.0 as u64 / 2;
+        let a_pt = 2u64;
         let a_ct = client.key.encrypt(a_pt);
 
         for b_pt in 0..server.params.message_modulus.0 as u64 {
             let b_ct = client.key.encrypt(b_pt);
             let min_ct = server.min(&a_ct, &b_ct);
+            // let min_ct = server.trivially_min(a_pt, b_pt, &a_ct, &b_ct);
             let actual = client.key.decrypt(&min_ct);
             let expected = a_pt.min(b_pt);
             println!(
