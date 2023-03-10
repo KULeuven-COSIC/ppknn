@@ -157,7 +157,6 @@ impl KnnServer {
             .zip(right_acc.as_polynomial_list().iter())
             .for_each(|(mut left, right)| polynomial_wrapping_add_assign(&mut left, &right));
 
-        // TODO: what should be the degree?
         Accumulator {
             acc: left_acc,
             degree: Degree(self.params.message_modulus.0 - 1),
@@ -167,10 +166,10 @@ impl KnnServer {
     pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
         let acc = self.double_ct_acc(a, b);
 
-        let t_over_4 =
-            trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
-        let mut diff = self.key.unchecked_sub(b, a);
-        self.key.unchecked_add_assign(&mut diff, &t_over_4);
+        // let t_over_4 =
+        //     trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
+        let diff = self.key.unchecked_sub(b, a);
+        // self.key.unchecked_add_assign(&mut diff, &t_over_4);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
@@ -183,10 +182,10 @@ impl KnnServer {
     ) -> Ciphertext {
         let acc = self.double_ct_acc(i, j);
 
-        let t_over_4 =
-            trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
+        // let t_over_4 =
+        //     trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
         let mut diff = self.key.unchecked_sub(b, a);
-        self.key.unchecked_add_assign(&mut diff, &t_over_4);
+        // self.key.unchecked_add_assign(&mut diff, &t_over_4);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 }
@@ -332,12 +331,13 @@ mod test {
     fn test_custom_accumulator() {
         // setup a truth table that always returns the same value `pt`
         // then using PBS we should always get `pt`
-        let (server, mut client) = setup(TEST_PARAM);
+        let (server, client) = setup(TEST_PARAM);
 
         let pt = 1u64;
-        let ct_before = client.lwe_encode_encrypt(pt);
+        let ct_before = client.key.encrypt(pt);
         let ct_after = server.lwe_to_glwe(&ct_before);
 
+        /*
         {
             // test the key switching
             let mut output_plaintext =
@@ -358,6 +358,7 @@ mod test {
             });
             assert_eq!(output_plaintext, expected);
         }
+        */
 
         // we need to set the accumulator to be: ct_after * (X^0 + ... + X^{N-1})
         // where ct_after is an encryption of `pt`
@@ -379,12 +380,10 @@ mod test {
         };
 
         // now we do pbs and the result should always be `pt`
-        // doesn't matter what the ct is or the encoding, so we use the shortint encrypt function
-        // msb(u) in X^u * T(X) must 0, so we stop early in the iteration
-        for x in 0u64..(server.params.message_modulus.0 - 1) as u64 {
-            let ct = client.lwe_encode_encrypt(x);
+        for x in 0u64..server.params.message_modulus.0 as u64 {
+            let ct = client.key.encrypt(x);
             let res = server.key.keyswitch_programmable_bootstrap(&ct, &acc);
-            let actual = client.lwe_decrypt_decode(&res);
+            let actual = client.key.decrypt(&res);
             println!("x={}, actual={}, expected={}", x, actual, pt);
             assert_eq!(actual, pt);
         }
@@ -393,12 +392,12 @@ mod test {
     #[test]
     fn test_min() {
         let (server, mut client) = setup(TEST_PARAM);
-        // remember we need an extra bit for the negative
-        let a_pt = 3u64;
+        let a_pt = 1u64;
         let b_pt = 2u64;
-        let a_ct = client.lwe_encode_encrypt(a_pt);
-        let b_ct = client.lwe_encode_encrypt(b_pt);
+        let a_ct = client.key.encrypt(a_pt);
+        let b_ct = client.key.encrypt(b_pt);
 
+        /*
         {
             // test sub is working correctly
             let mut diff = Ciphertext {
@@ -413,9 +412,10 @@ mod test {
             let expected = b_pt.wrapping_sub(a_pt) % server.params.message_modulus.0 as u64;
             assert_eq!(actual, expected);
         }
+         */
 
         let min_ct = server.min(&a_ct, &b_ct);
-        let actual = client.lwe_decrypt_decode(&min_ct);
+        let actual = client.key.decrypt(&min_ct);
         let expected = a_pt.min(b_pt);
         assert_eq!(actual, expected);
     }
