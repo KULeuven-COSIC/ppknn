@@ -335,7 +335,7 @@ mod test {
         pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
         cbs_level: DecompositionLevelCount(0),
         cbs_base_log: DecompositionBaseLog(0),
-        message_modulus: MessageModulus(16),
+        message_modulus: MessageModulus(8),
         carry_modulus: CarryModulus(1),
     };
 
@@ -449,6 +449,7 @@ mod test {
         // let acc = server.trivially_double_ct_acc(left, right);
         let acc = server.double_ct_acc(&client.key.encrypt(left), &client.key.encrypt(right));
         for x in 0u64..server.params.message_modulus.0 as u64 {
+            let ct = client.key.encrypt(x);
             let res = server.key.keyswitch_programmable_bootstrap(&ct, &acc);
             let actual = client.key.decrypt(&res);
             let expected = if x < server.params.message_modulus.0 as u64 / 2 {
