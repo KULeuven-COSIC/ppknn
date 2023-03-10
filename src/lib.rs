@@ -217,6 +217,7 @@ impl KnnServer {
         // let t_over_4 =
         //     trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
         let diff = self.key.unchecked_sub(b, a);
+        // self.key.message_extract_assign(&mut diff);
         // self.key.unchecked_add_assign(&mut diff, &t_over_4);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
@@ -232,7 +233,7 @@ impl KnnServer {
 
         // let t_over_4 =
         //     trivially_encoded_ciphertext(self.params, self.params.message_modulus.0 as u64 / 4);
-        let mut diff = self.key.unchecked_sub(b, a);
+        let diff = self.key.unchecked_sub(b, a);
         // self.key.unchecked_add_assign(&mut diff, &t_over_4);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
@@ -461,32 +462,20 @@ mod test {
     #[test]
     fn test_min() {
         let (server, client) = setup(TEST_PARAM);
-        let a_pt = 1u64;
-        let b_pt = 2u64;
+        let a_pt = server.params.message_modulus.0 as u64 / 2; // 2u64;
         let a_ct = client.key.encrypt(a_pt);
-        let b_ct = client.key.encrypt(b_pt);
 
-        /*
-        {
-            // test sub is working correctly
-            let mut diff = Ciphertext {
-                ct: LweCiphertextOwned::new(0u64, LweSize(server.params.polynomial_size.0 + 1)),
-                degree: Degree(server.params.message_modulus.0 - 1),
-                message_modulus: server.params.message_modulus,
-                carry_modulus: server.params.carry_modulus,
-            };
-            slice_wrapping_sub(&mut diff.ct.as_mut(), &b_ct.ct.as_ref(), &a_ct.ct.as_ref());
-            // let diff = server.key.unchecked_sub(&b_ct, &a_ct);
-            let actual = client.lwe_decrypt_decode(&diff);
-            let expected = b_pt.wrapping_sub(a_pt) % server.params.message_modulus.0 as u64;
+        for b_pt in 0..server.params.message_modulus.0 as u64 {
+            let b_ct = client.key.encrypt(b_pt);
+            let min_ct = server.min(&a_ct, &b_ct);
+            let actual = client.key.decrypt(&min_ct);
+            let expected = a_pt.min(b_pt);
+            println!(
+                "a={}, b={}, actual={}, expected={}",
+                a_pt, b_pt, actual, expected
+            );
             assert_eq!(actual, expected);
         }
-         */
-
-        let min_ct = server.min(&a_ct, &b_ct);
-        let actual = client.key.decrypt(&min_ct);
-        let expected = a_pt.min(b_pt);
-        assert_eq!(actual, expected);
     }
 
     #[test]
