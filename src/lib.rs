@@ -112,11 +112,11 @@ impl KnnServer {
         out
     }
 
-    pub fn double_ct_acc(&self, left_lwe: &Ciphertext, right_lwe: &Ciphertext) -> Accumulator {
-        // first key switch the LWE ciphertexts to GLWE
-        let left_glwe = self.lwe_to_glwe(&left_lwe);
-        let right_glwe = self.lwe_to_glwe(&right_lwe);
-
+    fn double_glwe_acc(
+        &self,
+        left_glwe: &GlweCiphertextOwned<u64>,
+        right_glwe: &GlweCiphertextOwned<u64>,
+    ) -> Accumulator {
         let half_n = self.params.polynomial_size.0 / 2;
         let chunk_size = self.params.polynomial_size.0 / self.params.message_modulus.0;
 
@@ -161,6 +161,54 @@ impl KnnServer {
             acc: left_acc,
             degree: Degree(self.params.message_modulus.0 - 1),
         }
+    }
+
+    pub fn trivially_double_ct_acc(&self, left_value: u64, right_value: u64) -> Accumulator {
+        let encode = |message: u64| -> u64 {
+            //The delta is the one defined by the parameters
+            let delta = (1_u64 << 63)
+                / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+
+            //The input is reduced modulus the message_modulus
+            let m = message % self.params.message_modulus.0 as u64;
+            m * delta
+        };
+
+        let left_encoded = PlaintextList::from_container(
+            vec![encode(left_value)]
+                .into_iter()
+                .chain(vec![0; self.params.polynomial_size.0 - 1])
+                .collect::<Vec<_>>(),
+        );
+        let right_encoded = PlaintextList::from_container(
+            vec![encode(right_value)]
+                .into_iter()
+                .chain(vec![0; self.params.polynomial_size.0 - 1])
+                .collect::<Vec<_>>(),
+        );
+
+        let mut left_glwe = GlweCiphertext::new(
+            0u64,
+            self.params.glwe_dimension.to_glwe_size(),
+            self.params.polynomial_size,
+        );
+        let mut right_glwe = GlweCiphertext::new(
+            0u64,
+            self.params.glwe_dimension.to_glwe_size(),
+            self.params.polynomial_size,
+        );
+        trivially_encrypt_glwe_ciphertext(&mut left_glwe, &left_encoded);
+        trivially_encrypt_glwe_ciphertext(&mut right_glwe, &right_encoded);
+
+        self.double_glwe_acc(&left_glwe, &right_glwe)
+    }
+
+    pub fn double_ct_acc(&self, left_lwe: &Ciphertext, right_lwe: &Ciphertext) -> Accumulator {
+        // first key switch the LWE ciphertexts to GLWE
+        let left_glwe = self.lwe_to_glwe(&left_lwe);
+        let right_glwe = self.lwe_to_glwe(&right_lwe);
+
+        self.double_glwe_acc(&left_glwe, &right_glwe)
     }
 
     pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
@@ -390,8 +438,29 @@ mod test {
     }
 
     #[test]
+    fn test_double_ct_acc() {
+        let (server, client) = setup(TEST_PARAM);
+        let left = 1u64;
+        let right = server.params.message_modulus.0 as u64 - 1;
+        // let acc = server.trivially_double_ct_acc(left, right);
+        let acc = server.double_ct_acc(&client.key.encrypt(left), &client.key.encrypt(right));
+        for x in 0u64..server.params.message_modulus.0 as u64 {
+            let ct = client.key.encrypt(x);
+            let res = server.key.keyswitch_programmable_bootstrap(&ct, &acc);
+            let actual = client.key.decrypt(&res);
+            let expected = if x < server.params.message_modulus.0 as u64 / 2 {
+                left
+            } else {
+                right
+            };
+            println!("x={}, actual={}, expected={}", x, actual, expected);
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
     fn test_min() {
-        let (server, mut client) = setup(TEST_PARAM);
+        let (server, client) = setup(TEST_PARAM);
         let a_pt = 1u64;
         let b_pt = 2u64;
         let a_ct = client.key.encrypt(a_pt);
