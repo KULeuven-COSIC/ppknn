@@ -264,9 +264,8 @@ pub fn setup(params: Parameters) -> (KnnServer, KnnClient) {
 
 #[cfg(test)]
 mod test {
-    use tfhe::core_crypto::algorithms::slice_algorithms::slice_wrapping_add;
-    use tfhe::core_crypto::prelude::slice_algorithms::slice_wrapping_sub;
     use super::*;
+    use tfhe::core_crypto::prelude::slice_algorithms::slice_wrapping_sub;
     use tfhe::shortint::ciphertext::Degree;
     use tfhe::shortint::server_key::Accumulator;
 
@@ -285,9 +284,49 @@ mod test {
         pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
         cbs_level: DecompositionLevelCount(0),
         cbs_base_log: DecompositionBaseLog(0),
-        message_modulus: MessageModulus(32),
+        message_modulus: MessageModulus(16),
         carry_modulus: CarryModulus(1),
     };
+
+    #[test]
+    fn test_tfhe_arith() {
+        // testing some basic tfhe-rs operations
+        let (client, server) = gen_keys(TEST_PARAM);
+        {
+            // computation without considering the padding bit
+            // note that we cannot use unchecked_sub for this
+            let ct_0 = client.encrypt_without_padding(0);
+            let ct_1 = client.encrypt_without_padding(1);
+            let mut res = Ciphertext {
+                ct: LweCiphertextOwned::new(0u64, LweSize(client.parameters.polynomial_size.0 + 1)),
+                degree: Degree(client.parameters.message_modulus.0 - 1),
+                message_modulus: client.parameters.message_modulus,
+                carry_modulus: client.parameters.carry_modulus,
+            };
+            slice_wrapping_sub(&mut res.ct.as_mut(), &ct_0.ct.as_ref(), &ct_1.ct.as_ref());
+            assert_eq!(
+                client.decrypt_without_padding(&res),
+                client.parameters.message_modulus.0 as u64 - 1
+            );
+        }
+        {
+            // computation with the padding bit but no carry bit for -1
+            let ct_0 = client.encrypt(0);
+            let ct_1 = client.encrypt(1);
+            let res = server.unchecked_sub(&ct_0, &ct_1);
+            assert_eq!(
+                client.decrypt(&res),
+                client.parameters.message_modulus.0 as u64 - 1
+            );
+        }
+        {
+            // computation with the padding bit but no carry bit for 0 - (-1)
+            let ct_0 = client.encrypt(0);
+            let ct_1 = client.encrypt(client.parameters.message_modulus.0 as u64 - 1);
+            let res = server.unchecked_sub(&ct_0, &ct_1);
+            assert_eq!(client.decrypt(&res), 1);
+        }
+    }
 
     #[test]
     fn test_custom_accumulator() {
@@ -341,8 +380,8 @@ mod test {
 
         // now we do pbs and the result should always be `pt`
         // doesn't matter what the ct is or the encoding, so we use the shortint encrypt function
-        // msb(u) in X^u * T(X) must 0, so we iterate to message_modulus/2
-        for x in 0u64..(server.params.message_modulus.0 / 2) as u64 {
+        // msb(u) in X^u * T(X) must 0, so we stop early in the iteration
+        for x in 0u64..(server.params.message_modulus.0 - 1) as u64 {
             let ct = client.lwe_encode_encrypt(x);
             let res = server.key.keyswitch_programmable_bootstrap(&ct, &acc);
             let actual = client.lwe_decrypt_decode(&res);
