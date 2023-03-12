@@ -1,6 +1,6 @@
+use crate::KnnServer;
 use std::cmp::Ord;
 use tfhe::shortint::prelude::*;
-use tfhe::shortint::server_key::Accumulator;
 
 pub trait Cmp {
     type Item;
@@ -71,10 +71,9 @@ impl EncItem {
     }
 
     pub fn decrypt(&self, client_key: &ClientKey) -> (u64, u64) {
-        let modulus = client_key.parameters.message_modulus.0 as u64;
         (
-            client_key.decrypt(&self.value) % modulus,
-            client_key.decrypt(&self.class) % modulus,
+            client_key.decrypt(&self.value),
+            client_key.decrypt(&self.class),
         )
     }
 }
@@ -83,20 +82,16 @@ pub struct EncCmp {
     cmp_count: usize,
     vs: Vec<EncItem>,
     params: Parameters,
-    server_key: ServerKey,
-    acc: Accumulator,
+    server: KnnServer,
 }
 
 impl EncCmp {
-    pub fn boxed(vs: Vec<EncItem>, params: &Parameters, server_key: ServerKey) -> Box<Self> {
-        let modulus = params.message_modulus.0 as u64;
-        let acc = server_key.generate_accumulator(|x| if x >= modulus / 2 { 1 } else { 0 });
+    pub fn boxed(vs: Vec<EncItem>, params: Parameters, server: KnnServer) -> Box<Self> {
         Box::new(Self {
             cmp_count: 0,
             vs,
-            params: params.clone(),
-            server_key,
-            acc,
+            params,
+            server,
         })
     }
 
@@ -109,45 +104,22 @@ impl Cmp for EncCmp {
     type Item = EncItem;
 
     fn cmp_at(&mut self, i: usize, j: usize) {
-        let diff = self
-            .server_key
-            .unchecked_sub(&self.vs[i].value, &self.vs[j].value);
-        let cmp_res = self
-            .server_key
-            .keyswitch_programmable_bootstrap(&diff, &self.acc);
-        // let cmp_res = self.server_key.unchecked_less(&self.vs[i].value, &self.vs[j].value);
+        let min_value = self.server.min(&self.vs[i].value, &self.vs[j].value);
+        let min_class = self.server.arg_min(
+            &self.vs[i].value,
+            &self.vs[j].value,
+            &self.vs[i].class,
+            &self.vs[j].class,
+        );
 
-        // vs[j] + cmp_res * (vs[i] - vs[j])
-        let mut smaller = self
-            .server_key
-            .unchecked_sub(&self.vs[i].value, &self.vs[j].value);
-        self.server_key
-            .unchecked_mul_lsb_assign(&mut smaller, &cmp_res);
-        self.server_key
-            .unchecked_add_assign(&mut smaller, &self.vs[j].value);
+        let mut max_value = self.server.raw_add(&self.vs[i].value, &self.vs[j].value);
+        self.server.raw_sub_assign(&mut max_value, &min_value);
 
-        let mut bigger = self
-            .server_key
-            .unchecked_add(&self.vs[i].value, &self.vs[j].value);
-        self.server_key.unchecked_sub_assign(&mut bigger, &smaller);
+        let mut max_class = self.server.raw_add(&self.vs[i].class, &self.vs[j].class);
+        self.server.raw_sub_assign(&mut max_class, &min_class);
 
-        // j + cmp_res * (i - j)
-        let mut smaller_class = self
-            .server_key
-            .unchecked_sub(&self.vs[i].class, &self.vs[j].class);
-        self.server_key
-            .unchecked_mul_lsb_assign(&mut smaller_class, &cmp_res);
-        self.server_key
-            .unchecked_add_assign(&mut smaller_class, &self.vs[j].class);
-
-        let mut bigger_class = self
-            .server_key
-            .unchecked_add(&self.vs[i].class, &self.vs[j].class);
-        self.server_key
-            .unchecked_sub_assign(&mut bigger_class, &smaller_class);
-
-        self.vs[i] = EncItem::new(smaller, smaller_class);
-        self.vs[j] = EncItem::new(bigger, bigger_class);
+        self.vs[i] = EncItem::new(min_value, min_class);
+        self.vs[j] = EncItem::new(max_value, max_class);
     }
 
     fn swap(&mut self, i: usize, j: usize) {

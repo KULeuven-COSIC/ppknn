@@ -15,6 +15,9 @@ use tfhe::core_crypto::algorithms::slice_algorithms::slice_wrapping_sub;
 use tfhe::core_crypto::prelude::polynomial_algorithms::{
     polynomial_wrapping_add_assign, polynomial_wrapping_mul,
 };
+use tfhe::core_crypto::prelude::slice_algorithms::{
+    slice_wrapping_add, slice_wrapping_add_assign, slice_wrapping_sub_assign,
+};
 use tfhe::core_crypto::prelude::*;
 use tfhe::shortint::ciphertext::Degree;
 use tfhe::shortint::prelude::*;
@@ -202,13 +205,7 @@ impl KnnServer {
         // we use a raw subtract and then add by t/2 to ensure the negative
         // does not overflow into the padding bit
 
-        let mut res = Ciphertext {
-            ct: LweCiphertextOwned::new(0u64, LweSize(self.params.polynomial_size.0 + 1)),
-            degree: Degree(self.params.message_modulus.0 - 1),
-            message_modulus: self.params.message_modulus,
-            carry_modulus: self.params.carry_modulus,
-        };
-        slice_wrapping_sub(&mut res.ct.as_mut(), &b.ct.as_ref(), &a.ct.as_ref());
+        let mut res = self.raw_sub(&b, &a);
 
         let delta =
             (1_u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
@@ -249,6 +246,36 @@ impl KnnServer {
 
         let diff = self.special_sub(&b, &a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
+    }
+
+    fn new_ct(&self) -> Ciphertext {
+        let res = Ciphertext {
+            ct: LweCiphertextOwned::new(0u64, LweSize(self.params.polynomial_size.0 + 1)),
+            degree: Degree(self.params.message_modulus.0 - 1),
+            message_modulus: self.params.message_modulus,
+            carry_modulus: self.params.carry_modulus,
+        };
+        res
+    }
+
+    pub fn raw_sub(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Ciphertext {
+        let mut res = self.new_ct();
+        slice_wrapping_sub(&mut res.ct.as_mut(), &lhs.ct.as_ref(), &rhs.ct.as_ref());
+        res
+    }
+
+    pub fn raw_sub_assign(&self, lhs: &mut Ciphertext, rhs: &Ciphertext) {
+        slice_wrapping_sub_assign(&mut lhs.ct.as_mut(), &rhs.ct.as_ref())
+    }
+
+    pub fn raw_add(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Ciphertext {
+        let mut res = self.new_ct();
+        slice_wrapping_add(&mut res.ct.as_mut(), &lhs.ct.as_ref(), &rhs.ct.as_ref());
+        res
+    }
+
+    pub fn raw_add_assign(&self, lhs: &mut Ciphertext, rhs: &Ciphertext) {
+        slice_wrapping_add_assign(&mut lhs.ct.as_mut(), &rhs.ct.as_ref())
     }
 }
 
@@ -306,19 +333,19 @@ impl KnnClient {
     }
 }
 
-pub fn setup(params: Parameters) -> (KnnServer, KnnClient) {
+pub fn setup(params: Parameters) -> (KnnClient, KnnServer) {
     let mut ctx = Context::new(params);
     let (client_key, server_key) = gen_keys(params);
     let lwe_to_glwe_ksk = ctx.gen_ksk(client_key.get_lwe_sk_ref(), client_key.get_glwe_sk_ref());
     (
+        KnnClient {
+            key: client_key,
+            ctx,
+        },
         KnnServer {
             key: server_key,
             lwe_to_glwe_ksk,
             params,
-        },
-        KnnClient {
-            key: client_key,
-            ctx,
         },
     )
 }
@@ -326,9 +353,6 @@ pub fn setup(params: Parameters) -> (KnnServer, KnnClient) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tfhe::core_crypto::prelude::slice_algorithms::slice_wrapping_sub;
-    use tfhe::shortint::ciphertext::Degree;
-    use tfhe::shortint::server_key::Accumulator;
 
     pub(crate) const TEST_PARAM: Parameters = Parameters {
         lwe_dimension: LweDimension(742),
@@ -395,7 +419,7 @@ mod test {
     fn test_custom_accumulator() {
         // setup a truth table that always returns the same value `pt`
         // then using PBS we should always get `pt`
-        let (server, client) = setup(TEST_PARAM);
+        let (client, server) = setup(TEST_PARAM);
 
         let pt = 1u64;
         let ct_before = client.key.encrypt(pt);
@@ -455,7 +479,7 @@ mod test {
 
     #[test]
     fn test_double_ct_acc() {
-        let (server, client) = setup(TEST_PARAM);
+        let (client, server) = setup(TEST_PARAM);
         let left = 1u64;
         let right = server.params.message_modulus.0 as u64 - 1;
         // let acc = server.trivially_double_ct_acc(left, right);
@@ -473,7 +497,7 @@ mod test {
 
     #[test]
     fn test_min() {
-        let (server, client) = setup(TEST_PARAM);
+        let (client, server) = setup(TEST_PARAM);
 
         // note that we can only use half of the plaintext space since
         // the subtraction will take us to the full plaintext space
@@ -497,48 +521,36 @@ mod test {
     #[test]
     fn test_enc_sort() {
         {
-            let (client_key, server_key) = gen_keys(TEST_PARAM);
+            let (client, server) = setup(TEST_PARAM);
             let pt_vec = vec![(1, 1), (0, 0), (2, 2), (3u64, 3u64)];
-            let enc_cmp = EncCmp::boxed(
-                enc_vec(&pt_vec, &client_key),
-                &client_key.parameters,
-                server_key,
-            );
+            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = sorter.inner()[0].decrypt(&client_key);
+            let output = sorter.inner()[0].decrypt(&client.key);
             assert_eq!(output, (0, 0));
         }
         {
-            let (client_key, server_key) = gen_keys(TEST_PARAM);
+            let (client, server) = setup(TEST_PARAM);
             let pt_vec = vec![(2, 2), (2, 2), (1, 1), (3u64, 3u64)];
-            let enc_cmp = EncCmp::boxed(
-                enc_vec(&pt_vec, &client_key),
-                &client_key.parameters,
-                server_key,
-            );
+            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = sorter.inner()[0].decrypt(&client_key);
+            let output = sorter.inner()[0].decrypt(&client.key);
             assert_eq!(output, (1, 1));
         }
         {
-            let (client_key, server_key) = gen_keys(TEST_PARAM);
+            let (client, server) = setup(TEST_PARAM);
             let pt_vec = vec![(1, 1), (2, 2), (3u64, 3u64), (0, 0)];
-            let enc_cmp = EncCmp::boxed(
-                enc_vec(&pt_vec, &client_key),
-                &client_key.parameters,
-                server_key,
-            );
+            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = sorter.inner()[0].decrypt(&client_key);
+            let output = sorter.inner()[0].decrypt(&client.key);
             assert_eq!(output, (0, 0));
         }
     }
