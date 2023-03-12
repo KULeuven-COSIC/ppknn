@@ -11,6 +11,7 @@ use crate::codec::Codec;
 use crate::context::{lwe_decrypt_decode, lwe_encode_encrypt, Context};
 use std::fs;
 use std::io::Cursor;
+use tfhe::core_crypto::algorithms::slice_algorithms::slice_wrapping_sub;
 use tfhe::core_crypto::prelude::polynomial_algorithms::{
     polynomial_wrapping_add_assign, polynomial_wrapping_mul,
 };
@@ -45,20 +46,6 @@ pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
     vs.iter()
         .map(|v| EncItem::new(client_key.encrypt(v.0), client_key.encrypt(v.1)))
         .collect()
-}
-
-fn trivially_encoded_ciphertext(params: Parameters, x: u64) -> Ciphertext {
-    let codec = Codec::new(params.message_modulus.0 as u64);
-    let mut lwe = LweCiphertext::new(0u64, LweSize(params.polynomial_size.0 + 1));
-    let mut encoded = x;
-    codec.encode(&mut encoded);
-    trivially_encrypt_lwe_ciphertext(&mut lwe, Plaintext(encoded));
-    Ciphertext {
-        ct: lwe,
-        degree: Degree(params.message_modulus.0 - 1),
-        message_modulus: params.message_modulus,
-        carry_modulus: params.carry_modulus,
-    }
 }
 
 pub struct KnnServer {
@@ -211,19 +198,43 @@ impl KnnServer {
         self.double_glwe_acc(&left_glwe, &right_glwe)
     }
 
+    fn special_sub(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
+        // we use a raw subtract and then add by t/2 to ensure the negative
+        // does not overflow into the padding bit
+
+        let mut res = Ciphertext {
+            ct: LweCiphertextOwned::new(0u64, LweSize(self.params.polynomial_size.0 + 1)),
+            degree: Degree(self.params.message_modulus.0 - 1),
+            message_modulus: self.params.message_modulus,
+            carry_modulus: self.params.carry_modulus,
+        };
+        slice_wrapping_sub(&mut res.ct.as_mut(), &b.ct.as_ref(), &a.ct.as_ref());
+
+        let delta =
+            (1_u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+        let mod_over_2 = Plaintext((self.params.message_modulus.0 as u64 / 2) * delta);
+        lwe_ciphertext_plaintext_add_assign(&mut res.ct, mod_over_2);
+
+        res
+    }
+
     pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
         let acc = self.double_ct_acc(a, b);
 
-        // TODO: issue with unchecked_sub
-        let diff = self.key.unchecked_sub(b, a);
+        let diff = self.special_sub(&b, &a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
-    pub fn trivially_min(&self, a_pt: u64, b_pt: u64, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
+    pub fn trivially_min(
+        &self,
+        a_pt: u64,
+        b_pt: u64,
+        a: &Ciphertext,
+        b: &Ciphertext,
+    ) -> Ciphertext {
         let acc = self.trivially_double_ct_acc(a_pt, b_pt);
 
-        // TODO: issue with unchecked_sub
-        let diff = self.key.unchecked_sub(b, a);
+        let diff = self.special_sub(&b, &a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
@@ -236,8 +247,7 @@ impl KnnServer {
     ) -> Ciphertext {
         let acc = self.double_ct_acc(i, j);
 
-        // TODO: issue with unchecked_sub
-        let diff = self.key.unchecked_sub(b, a);
+        let diff = self.special_sub(&b, &a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 }
@@ -335,7 +345,7 @@ mod test {
         pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
         cbs_level: DecompositionLevelCount(0),
         cbs_base_log: DecompositionBaseLog(0),
-        message_modulus: MessageModulus(8),
+        message_modulus: MessageModulus(16),
         carry_modulus: CarryModulus(1),
     };
 
@@ -361,17 +371,19 @@ mod test {
             );
         }
         {
-            // computation with the padding bit but no carry bit for -1
+            // computation with the padding bit for -1
             let ct_0 = client.encrypt(0);
             let ct_1 = client.encrypt(1);
-            let res = server.unchecked_sub(&ct_0, &ct_1);
-            assert_eq!(
-                client.decrypt(&res),
-                client.parameters.message_modulus.0 as u64 - 1
-            );
+            let ct = server.unchecked_sub(&ct_0, &ct_1);
+            let res = client.decrypt(&ct);
+            assert_eq!(res, client.parameters.message_modulus.0 as u64 - 1);
+
+            // check that the carry-bit is 1 also
+            // let carry_msg = client.decrypt_message_and_carry(&ct);
+            // assert_eq!((carry_msg ^ res), client.parameters.message_modulus.0 as u64);
         }
         {
-            // computation with the padding bit but no carry bit for 0 - (-1)
+            // computation with the padding bit for 0 - (-1)
             let ct_0 = client.encrypt(0);
             let ct_1 = client.encrypt(client.parameters.message_modulus.0 as u64 - 1);
             let res = server.unchecked_sub(&ct_0, &ct_1);
@@ -428,7 +440,7 @@ mod test {
 
         let acc = Accumulator {
             acc: glwe_acc,
-            degree: Degree(server.params.message_modulus.0 - 1), // TODO: how to set degree?
+            degree: Degree(server.params.message_modulus.0 - 1),
         };
 
         // now we do pbs and the result should always be `pt`
@@ -444,19 +456,16 @@ mod test {
     #[test]
     fn test_double_ct_acc() {
         let (server, client) = setup(TEST_PARAM);
-        let left = 2u64;
-        let right = 2u64; // server.params.message_modulus.0 as u64 - 1;
+        let left = 1u64;
+        let right = server.params.message_modulus.0 as u64 - 1;
         // let acc = server.trivially_double_ct_acc(left, right);
         let acc = server.double_ct_acc(&client.key.encrypt(left), &client.key.encrypt(right));
-        for x in 0u64..server.params.message_modulus.0 as u64 {
+        let modulus = server.params.message_modulus.0;
+        for x in 0u64..modulus as u64 {
             let ct = client.key.encrypt(x);
             let res = server.key.keyswitch_programmable_bootstrap(&ct, &acc);
             let actual = client.key.decrypt(&res);
-            let expected = if x < server.params.message_modulus.0 as u64 / 2 {
-                left
-            } else {
-                right
-            };
+            let expected = if x < modulus as u64 / 2 { left } else { right };
             println!("x={}, actual={}, expected={}", x, actual, expected);
             assert_eq!(actual, expected);
         }
@@ -465,21 +474,23 @@ mod test {
     #[test]
     fn test_min() {
         let (server, client) = setup(TEST_PARAM);
-        // let a_pt = server.params.message_modulus.0 as u64 / 2;
-        let a_pt = 2u64;
-        let a_ct = client.key.encrypt(a_pt);
 
-        for b_pt in 0..server.params.message_modulus.0 as u64 {
-            let b_ct = client.key.encrypt(b_pt);
-            let min_ct = server.min(&a_ct, &b_ct);
-            // let min_ct = server.trivially_min(a_pt, b_pt, &a_ct, &b_ct);
-            let actual = client.key.decrypt(&min_ct);
-            let expected = a_pt.min(b_pt);
-            println!(
-                "a={}, b={}, actual={}, expected={}",
-                a_pt, b_pt, actual, expected
-            );
-            assert_eq!(actual, expected);
+        // note that we can only use half of the plaintext space since
+        // the subtraction will take us to the full plaintext space
+        for a_pt in 0..server.params.message_modulus.0 as u64 / 2 {
+            let a_ct = client.key.encrypt(a_pt);
+            for b_pt in 0..server.params.message_modulus.0 as u64 / 2 {
+                let b_ct = client.key.encrypt(b_pt);
+                let min_ct = server.min(&a_ct, &b_ct);
+                // let min_ct = server.trivially_min(a_pt, b_pt, &a_ct, &b_ct);
+                let actual = client.key.decrypt(&min_ct);
+                let expected = a_pt.min(b_pt);
+                println!(
+                    "a={}, b={}, actual={}, expected={}",
+                    a_pt, b_pt, actual, expected
+                );
+                assert_eq!(actual, expected);
+            }
         }
     }
 
