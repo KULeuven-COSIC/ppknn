@@ -92,10 +92,14 @@ impl KnnServer {
                     MonomialDegree(self.gamma - 1),
                 );
 
-                // add \sum_{i=1}^{gamma} m_i^2
+                // subtract \sum_{i=1}^{gamma} m_i^2
                 let delta = (1_u64 << 63)
                     / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
-                let m2 = Plaintext(delta * m.iter().map(|x| *x.0 * *x.0).sum::<u64>());
+                let m2 = Plaintext(
+                    delta
+                        * (self.params.message_modulus.0 as u64
+                            - m.iter().map(|x| *x.0 * *x.0).sum::<u64>()),
+                );
                 lwe_ciphertext_plaintext_add_assign(&mut lwe.ct, m2);
                 lwe
             })
@@ -404,6 +408,7 @@ impl KnnClient {
         let delta = self.delta();
         assert!(gamma < n);
 
+        // \sum_{i=0}^{\gamma - 1} c_i * X^i
         let pt = PlaintextList::from_container({
             let mut container = vec![];
             container.extend_from_slice(target);
@@ -415,11 +420,13 @@ impl KnnClient {
             container
         });
 
-        let pt2 = PlaintextList::from_container(
-            pt.iter()
-                .map(|x| x.0.wrapping_mul(*x.0 * delta))
-                .collect::<Vec<_>>(),
-        );
+        // X^{\gamma - 1} * (\sum_{i = 0}^{\gamma - 1} c_i^2)
+        let pt2 = PlaintextList::from_container({
+            let sum_sqr = pt.iter().map(|x| x.0.wrapping_mul(*x.0 * delta)).sum();
+            let mut container = vec![0u64; self.ctx.params.polynomial_size.0];
+            container[gamma - 1] = sum_sqr;
+            container
+        });
 
         // now encrypt the two plaintexts
         let mut glwe = GlweCiphertext::new(
@@ -476,6 +483,7 @@ pub fn setup_with_data(params: Parameters, data: Vec<Vec<u64>>) -> (KnnClient, K
         .into_iter()
         .map(|mut v| {
             PlaintextList::from_container({
+                v.reverse();
                 v.extend_from_slice(&padding);
                 v
             })
