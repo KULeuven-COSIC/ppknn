@@ -45,6 +45,21 @@ pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
         .collect()
 }
 
+fn decode(params: Parameters, x: u64) -> u64 {
+
+    let delta = (1_u64 << 63)
+        / (params.message_modulus.0 * params.carry_modulus.0)
+        as u64;
+
+    //The bit before the message
+    let rounding_bit = delta >> 1;
+
+    //compute the rounding bit
+    let rounding = (x & rounding_bit) << 1;
+
+    x.wrapping_add(rounding) / delta
+}
+
 pub struct KnnServer {
     key: ServerKey,
     lwe_to_glwe_ksk: LwePrivateFunctionalPackingKeyswitchKeyOwned<u64>,
@@ -59,6 +74,7 @@ impl KnnServer {
         c: &GlweCiphertextOwned<u64>,
         c2: &GlweCiphertextOwned<u64>,
     ) -> Vec<Ciphertext> {
+        let delta = self.delta();
         self.data
             .iter()
             .map(|m| {
@@ -80,8 +96,8 @@ impl KnnServer {
                     &c.get_body().as_polynomial(),
                     &m.as_polynomial(),
                 );
-                slice_wrapping_scalar_mul_assign(&mut glwe.as_mut(), 2u64);
-                slice_wrapping_opposite_assign(&mut glwe.as_mut()); // combine with scalar_mul?
+                slice_wrapping_scalar_mul_assign(&mut glwe.as_mut(), self.params.message_modulus.0 as u64 - 2u64);
+                // slice_wrapping_opposite_assign(&mut glwe.as_mut()); // combine with scalar_mul?
                 slice_wrapping_add_assign(&mut glwe.as_mut(), &c2.as_ref());
 
                 // sample extract the \gamma -1 th coeff
@@ -92,14 +108,8 @@ impl KnnServer {
                     MonomialDegree(self.gamma - 1),
                 );
 
-                // subtract \sum_{i=1}^{gamma} m_i^2
-                let delta = (1_u64 << 63)
-                    / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
-                let m2 = Plaintext(
-                    delta
-                        * (self.params.message_modulus.0 as u64
-                            - m.iter().map(|x| *x.0 * *x.0).sum::<u64>()),
-                );
+                // add \sum_{i=1}^{gamma} m_i^2
+                let m2 = Plaintext(delta * m.iter().map(|x| *x.0 * *x.0).sum::<u64>());
                 lwe_ciphertext_plaintext_add_assign(&mut lwe.ct, m2);
                 lwe
             })
@@ -201,11 +211,16 @@ impl KnnServer {
         }
     }
 
+    fn delta(&self) -> u64 {
+        let delta = (1_u64 << 63)
+            / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+        delta
+    }
+
     pub fn trivially_double_ct_acc(&self, left_value: u64, right_value: u64) -> Accumulator {
         let encode = |message: u64| -> u64 {
             //The delta is the one defined by the parameters
-            let delta = (1_u64 << 63)
-                / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+            let delta = self.delta();
 
             //The input is reduced modulus the message_modulus
             let m = message % self.params.message_modulus.0 as u64;
@@ -255,8 +270,7 @@ impl KnnServer {
 
         let mut res = self.raw_sub(&b, &a);
 
-        let delta =
-            (1_u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+        let delta = self.delta();
         let mod_over_2 = Plaintext((self.params.message_modulus.0 as u64 / 2) * delta);
         lwe_ciphertext_plaintext_add_assign(&mut res.ct, mod_over_2);
 
@@ -324,6 +338,24 @@ impl KnnServer {
 
     pub fn raw_add_assign(&self, lhs: &mut Ciphertext, rhs: &Ciphertext) {
         slice_wrapping_add_assign(&mut lhs.ct.as_mut(), &rhs.ct.as_ref())
+    }
+
+    pub fn set_data(&mut self, data: Vec<Vec<u64>>) {
+        let gamma = data.iter().fold(0usize, |acc, x| acc.max(x.len()));
+        let padding = vec![0u64; self.params.polynomial_size.0 - gamma];
+        let data: Vec<_> = data
+            .into_iter()
+            .map(|mut v| {
+                PlaintextList::from_container({
+                    v.reverse();
+                    v.extend_from_slice(&padding);
+                    v
+                })
+            })
+            .collect();
+
+        self.gamma = gamma;
+        self.data = data;
     }
 }
 
@@ -422,7 +454,7 @@ impl KnnClient {
 
         // X^{\gamma - 1} * (\sum_{i = 0}^{\gamma - 1} c_i^2)
         let pt2 = PlaintextList::from_container({
-            let sum_sqr = pt.iter().map(|x| x.0.wrapping_mul(*x.0 * delta)).sum();
+            let sum_sqr = target.iter().map(|x| x.wrapping_mul(*x).wrapping_mul(delta)).sum();
             let mut container = vec![0u64; self.ctx.params.polynomial_size.0];
             container[gamma - 1] = sum_sqr;
             container
@@ -476,22 +508,7 @@ pub fn setup(params: Parameters) -> (KnnClient, KnnServer) {
 // The data should not be encoded
 pub fn setup_with_data(params: Parameters, data: Vec<Vec<u64>>) -> (KnnClient, KnnServer) {
     let (client, mut server) = setup(params);
-
-    let gamma = data.iter().fold(0usize, |acc, x| acc.max(x.len()));
-    let padding = vec![0u64; params.polynomial_size.0 - gamma];
-    let data: Vec<_> = data
-        .into_iter()
-        .map(|mut v| {
-            PlaintextList::from_container({
-                v.reverse();
-                v.extend_from_slice(&padding);
-                v
-            })
-        })
-        .collect();
-
-    server.gamma = gamma;
-    server.data = data;
+    server.set_data(data);
     (client, server)
 }
 
@@ -714,14 +731,28 @@ mod test {
 
     #[test]
     fn test_compute_distance() {
-        // distance should be 2^2 + 1 = 5
-        let data = vec![vec![0, 1, 0, 0u64]];
-        let target = vec![2, 0, 0, 0u64];
-        let (mut client, server) = setup_with_data(TEST_PARAM, data);
-        let (glwe, glwe2) = client.make_query(&target);
-        let distances = server.compute_distances(&glwe, &glwe2);
+        let (mut client, mut server) = setup(TEST_PARAM);
+        {
+            // distance should be 2^2 + 1 = 5
+            let data = vec![vec![0, 1, 0, 0u64]];
+            let target = vec![2, 0, 0, 0u64];
+            server.set_data(data);
+            let (glwe, glwe2) = client.make_query(&target);
+            let distances = server.compute_distances(&glwe, &glwe2);
 
-        let expected = 5u64;
-        assert_eq!(client.key.decrypt(&distances[0]), expected);
+            let expected = 5u64;
+            assert_eq!(client.key.decrypt(&distances[0]), expected);
+        }
+        {
+            // distance should be 2^2 = 4
+            let data = vec![vec![0, 0, 1, 3u64]];
+            let target = vec![0, 0, 1, 1u64];
+            server.set_data(data);
+            let (glwe, glwe2) = client.make_query(&target);
+            let distances = server.compute_distances(&glwe, &glwe2);
+
+            let expected = 4u64;
+            assert_eq!(client.key.decrypt(&distances[0]), expected);
+        }
     }
 }
