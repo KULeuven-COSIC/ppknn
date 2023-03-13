@@ -142,7 +142,7 @@ mod test {
                 (term.value() << shift) * s
             })
             .sum();
-        assert_eq!(a * s, out);
+        assert_eq!(closest * s, out);
     }
 
     #[test]

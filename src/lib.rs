@@ -338,12 +338,14 @@ impl KnnClient {
             &ct.ct,
         );
 
+
         // pt = pt - Delta*m = e (encoded_ptxt is Delta*m)
         let delta = (1_u64 << 63)
             / (self.ctx.params.message_modulus.0 * self.ctx.params.carry_modulus.0) as u64;
+
         pt.0 = pt.0.wrapping_sub(delta * expected_pt);
 
-        (pt.0 as f64).log2()
+        ((pt.0 as i64).abs() as f64).log2()
     }
 }
 
@@ -374,16 +376,16 @@ mod test {
         polynomial_size: PolynomialSize(2048),
         lwe_modular_std_dev: StandardDev(0.000007069849454709433),
         glwe_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
-        pbs_level: DecompositionLevelCount(9),
+        pbs_level: DecompositionLevelCount(6),
         pbs_base_log: DecompositionBaseLog(3),
-        ks_level: DecompositionLevelCount(9),
+        ks_level: DecompositionLevelCount(6),
         ks_base_log: DecompositionBaseLog(3),
-        pfks_level: DecompositionLevelCount(9),
+        pfks_level: DecompositionLevelCount(6),
         pfks_base_log: DecompositionBaseLog(3),
         pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
         cbs_level: DecompositionLevelCount(0),
         cbs_base_log: DecompositionBaseLog(0),
-        message_modulus: MessageModulus(16),
+        message_modulus: MessageModulus(32),
         carry_modulus: CarryModulus(1),
     };
 
@@ -542,8 +544,12 @@ mod test {
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = sorter.inner()[0].decrypt(&client.key);
-            assert_eq!(output, (0, 0));
+            let actual = sorter.inner()[0].decrypt(&client.key);
+            let expected = (0u64, 0u64);
+            assert_eq!(actual, expected);
+
+            let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
+            println!("noise={}", noise);
         }
         {
             let (client, server) = setup(TEST_PARAM);
@@ -553,8 +559,12 @@ mod test {
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = sorter.inner()[0].decrypt(&client.key);
-            assert_eq!(output, (1, 1));
+            let actual = sorter.inner()[0].decrypt(&client.key);
+            let expected = (1u64, 1u64);
+            assert_eq!(actual, expected);
+
+            let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
+            println!("noise={}", noise);
         }
         {
             let (client, server) = setup(TEST_PARAM);
@@ -564,8 +574,12 @@ mod test {
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
-            let output = sorter.inner()[0].decrypt(&client.key);
-            assert_eq!(output, (0, 0));
+            let actual = sorter.inner()[0].decrypt(&client.key);
+            let expected = (0u64, 0u64);
+            assert_eq!(actual, expected);
+
+            let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
+            println!("noise={}", noise);
         }
     }
 }
