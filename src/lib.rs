@@ -10,17 +10,12 @@ pub use comparator::*;
 use crate::context::{lwe_decrypt_decode, lwe_encode_encrypt, Context};
 use std::fs;
 use std::io::Cursor;
-use tfhe::core_crypto::algorithms::slice_algorithms::slice_wrapping_sub;
-use tfhe::core_crypto::prelude::polynomial_algorithms::{
-    polynomial_wrapping_add_assign, polynomial_wrapping_mul,
-};
-use tfhe::core_crypto::prelude::slice_algorithms::{
-    slice_wrapping_add, slice_wrapping_add_assign, slice_wrapping_sub_assign,
-};
+use tfhe::core_crypto::prelude::slice_algorithms::*;
+use tfhe::core_crypto::prelude::polynomial_algorithms::*;
 use tfhe::core_crypto::prelude::*;
 use tfhe::shortint::ciphertext::Degree;
-use tfhe::shortint::prelude::*;
 use tfhe::shortint::server_key::Accumulator;
+use tfhe::shortint::prelude::*;
 
 const DUMMY_KEY: &str = "dummy_key";
 
