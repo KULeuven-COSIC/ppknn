@@ -10,12 +10,12 @@ pub use comparator::*;
 use crate::context::{lwe_decrypt_decode, lwe_encode_encrypt, Context};
 use std::fs;
 use std::io::Cursor;
-use tfhe::core_crypto::prelude::slice_algorithms::*;
 use tfhe::core_crypto::prelude::polynomial_algorithms::*;
+use tfhe::core_crypto::prelude::slice_algorithms::*;
 use tfhe::core_crypto::prelude::*;
 use tfhe::shortint::ciphertext::Degree;
-use tfhe::shortint::server_key::Accumulator;
 use tfhe::shortint::prelude::*;
+use tfhe::shortint::server_key::Accumulator;
 
 const DUMMY_KEY: &str = "dummy_key";
 
@@ -49,9 +49,59 @@ pub struct KnnServer {
     key: ServerKey,
     lwe_to_glwe_ksk: LwePrivateFunctionalPackingKeyswitchKeyOwned<u64>,
     params: Parameters,
+    gamma: usize,
+    data: Vec<PlaintextListOwned<u64>>,
 }
 
 impl KnnServer {
+    pub fn compute_distances(
+        &self,
+        c: &GlweCiphertextOwned<u64>,
+        c2: &GlweCiphertextOwned<u64>,
+    ) -> Vec<Ciphertext> {
+        self.data
+            .iter()
+            .map(|m| {
+                // TODO convert to fft for mul?
+                let mut glwe = c.clone();
+                // c2 - 2 * m * c
+                glwe.get_mut_mask()
+                    .as_mut_polynomial_list()
+                    .iter_mut()
+                    .for_each(|mut mask| {
+                        polynomial_wrapping_mul(
+                            &mut mask,
+                            &c.get_mask().as_polynomial_list().get(0),
+                            &m.as_polynomial(),
+                        );
+                    });
+                polynomial_wrapping_mul(
+                    &mut glwe.get_mut_body().as_mut_polynomial(),
+                    &c.get_body().as_polynomial(),
+                    &m.as_polynomial(),
+                );
+                slice_wrapping_scalar_mul_assign(&mut glwe.as_mut(), 2u64);
+                slice_wrapping_opposite_assign(&mut glwe.as_mut()); // combine with scalar_mul?
+                slice_wrapping_add_assign(&mut glwe.as_mut(), &c2.as_ref());
+
+                // sample extract the \gamma -1 th coeff
+                let mut lwe = self.new_ct();
+                extract_lwe_sample_from_glwe_ciphertext(
+                    &glwe,
+                    &mut lwe.ct,
+                    MonomialDegree(self.gamma - 1),
+                );
+
+                // add \sum_{i=1}^{gamma} m_i^2
+                let delta = (1_u64 << 63)
+                    / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+                let m2 = Plaintext(delta * m.iter().map(|x| *x.0 * *x.0).sum::<u64>());
+                lwe_ciphertext_plaintext_add_assign(&mut lwe.ct, m2);
+                lwe
+            })
+            .collect()
+    }
+
     pub fn lwe_to_glwe(&self, ct: &Ciphertext) -> GlweCiphertextOwned<u64> {
         let mut output_glwe = GlweCiphertext::new(
             0,
@@ -328,19 +378,72 @@ impl KnnClient {
 
     pub fn lwe_noise(&self, ct: &Ciphertext, expected_pt: u64) -> f64 {
         // pt = b - a*s = Delta*m + e
-        let mut pt = decrypt_lwe_ciphertext(
-            &self.key.get_lwe_sk_ref(),
-            &ct.ct,
-        );
-
+        let mut pt = decrypt_lwe_ciphertext(&self.key.get_lwe_sk_ref(), &ct.ct);
 
         // pt = pt - Delta*m = e (encoded_ptxt is Delta*m)
-        let delta = (1_u64 << 63)
-            / (self.ctx.params.message_modulus.0 * self.ctx.params.carry_modulus.0) as u64;
+        let delta = self.delta();
 
         pt.0 = pt.0.wrapping_sub(delta * expected_pt);
 
         ((pt.0 as i64).abs() as f64).log2()
+    }
+
+    fn delta(&self) -> u64 {
+        let delta = (1_u64 << 63)
+            / (self.ctx.params.message_modulus.0 * self.ctx.params.carry_modulus.0) as u64;
+        delta
+    }
+
+    pub fn make_query(
+        &mut self,
+        target: &[u64],
+    ) -> (GlweCiphertextOwned<u64>, GlweCiphertextOwned<u64>) {
+        let gamma = target.len();
+        let n = self.ctx.params.polynomial_size.0;
+        let padding = vec![0u64; n - gamma];
+        let delta = self.delta();
+        assert!(gamma < n);
+
+        let pt = PlaintextList::from_container({
+            let mut container = vec![];
+            container.extend_from_slice(target);
+            container.extend_from_slice(&padding);
+
+            container.iter_mut().for_each(|x| {
+                *x = *x * delta;
+            });
+            container
+        });
+
+        let pt2 = PlaintextList::from_container(
+            pt.iter()
+                .map(|x| x.0.wrapping_mul(*x.0 * delta))
+                .collect::<Vec<_>>(),
+        );
+
+        // now encrypt the two plaintexts
+        let mut glwe = GlweCiphertext::new(
+            0u64,
+            self.ctx.params.glwe_dimension.to_glwe_size(),
+            self.ctx.params.polynomial_size,
+        );
+        let mut glwe2 = glwe.clone();
+
+        encrypt_glwe_ciphertext(
+            self.key.get_glwe_sk_ref(),
+            &mut glwe,
+            &pt,
+            self.ctx.params.glwe_modular_std_dev,
+            &mut self.ctx.encryption_rng,
+        );
+        encrypt_glwe_ciphertext(
+            self.key.get_glwe_sk_ref(),
+            &mut glwe2,
+            &pt2,
+            self.ctx.params.glwe_modular_std_dev,
+            &mut self.ctx.encryption_rng,
+        );
+        (glwe, glwe2)
     }
 }
 
@@ -357,8 +460,31 @@ pub fn setup(params: Parameters) -> (KnnClient, KnnServer) {
             key: server_key,
             lwe_to_glwe_ksk,
             params,
+            gamma: 0,
+            data: vec![],
         },
     )
+}
+
+// The data should not be encoded
+pub fn setup_with_data(params: Parameters, data: Vec<Vec<u64>>) -> (KnnClient, KnnServer) {
+    let (client, mut server) = setup(params);
+
+    let gamma = data.iter().fold(0usize, |acc, x| acc.max(x.len()));
+    let padding = vec![0u64; params.polynomial_size.0 - gamma];
+    let data: Vec<_> = data
+        .into_iter()
+        .map(|mut v| {
+            PlaintextList::from_container({
+                v.extend_from_slice(&padding);
+                v
+            })
+        })
+        .collect();
+
+    server.gamma = gamma;
+    server.data = data;
+    (client, server)
 }
 
 #[cfg(test)]
@@ -576,5 +702,18 @@ mod test {
             let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
             println!("noise={}", noise);
         }
+    }
+
+    #[test]
+    fn test_compute_distance() {
+        // distance should be 2^2 + 1 = 5
+        let data = vec![vec![0, 1, 0, 0u64]];
+        let target = vec![2, 0, 0, 0u64];
+        let (mut client, server) = setup_with_data(TEST_PARAM, data);
+        let (glwe, glwe2) = client.make_query(&target);
+        let distances = server.compute_distances(&glwe, &glwe2);
+
+        let expected = 5u64;
+        assert_eq!(client.key.decrypt(&distances[0]), expected);
     }
 }
