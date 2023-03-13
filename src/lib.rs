@@ -7,7 +7,6 @@ pub mod keyswitch;
 pub use batcher::*;
 pub use comparator::*;
 
-use crate::codec::Codec;
 use crate::context::{lwe_decrypt_decode, lwe_encode_encrypt, Context};
 use std::fs;
 use std::io::Cursor;
@@ -330,6 +329,21 @@ impl KnnClient {
             self.ctx.codec.decode(&mut x.0);
         });
         out
+    }
+
+    pub fn lwe_noise(&self, ct: &Ciphertext, expected_pt: u64) -> f64 {
+        // pt = b - a*s = Delta*m + e
+        let mut pt = decrypt_lwe_ciphertext(
+            &self.key.get_lwe_sk_ref(),
+            &ct.ct,
+        );
+
+        // pt = pt - Delta*m = e (encoded_ptxt is Delta*m)
+        let delta = (1_u64 << 63)
+            / (self.ctx.params.message_modulus.0 * self.ctx.params.carry_modulus.0) as u64;
+        pt.0 = pt.0.wrapping_sub(delta * expected_pt);
+
+        (pt.0 as f64).log2()
     }
 }
 
