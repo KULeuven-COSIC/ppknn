@@ -72,7 +72,7 @@ impl KnnServer {
     pub fn compute_distances(
         &self,
         c: &GlweCiphertextOwned<u64>,
-        c2: &GlweCiphertextOwned<u64>,
+        c2: &Ciphertext,
     ) -> Vec<Ciphertext> {
         let delta = self.delta();
         self.data
@@ -80,7 +80,8 @@ impl KnnServer {
             .map(|m| {
                 // TODO convert to fft for mul?
                 let mut glwe = c.clone();
-                // c2 - 2 * m * c
+                // we want to compute c^2 - 2 * m * c + m^2
+                // first compute 2*m*c where c is a RLWE
                 glwe.get_mut_mask()
                     .as_mut_polynomial_list()
                     .iter_mut()
@@ -98,7 +99,6 @@ impl KnnServer {
                 );
                 slice_wrapping_scalar_mul_assign(&mut glwe.as_mut(), self.params.message_modulus.0 as u64 - 2u64);
                 // slice_wrapping_opposite_assign(&mut glwe.as_mut()); // combine with scalar_mul?
-                slice_wrapping_add_assign(&mut glwe.as_mut(), &c2.as_ref());
 
                 // sample extract the \gamma -1 th coeff
                 let mut lwe = self.new_ct();
@@ -108,7 +108,10 @@ impl KnnServer {
                     MonomialDegree(self.gamma - 1),
                 );
 
-                // add \sum_{i=1}^{gamma} m_i^2
+                // add c2 = \sum_{i=0}^{\gamma-1} c_i^2 to -2*m*c
+                lwe_ciphertext_add_assign(&mut lwe.ct, &c2.ct);
+
+                // add \sum_{i=0}^{\gamma-1} m_i^2
                 let m2 = Plaintext(delta * m.iter().map(|x| *x.0 * *x.0).sum::<u64>());
                 lwe_ciphertext_plaintext_add_assign(&mut lwe.ct, m2);
                 lwe
@@ -433,7 +436,7 @@ impl KnnClient {
     pub fn make_query(
         &mut self,
         target: &[u64],
-    ) -> (GlweCiphertextOwned<u64>, GlweCiphertextOwned<u64>) {
+    ) -> (GlweCiphertextOwned<u64>, Ciphertext) {
         let gamma = target.len();
         let n = self.ctx.params.polynomial_size.0;
         let padding = vec![0u64; n - gamma];
@@ -453,36 +456,23 @@ impl KnnClient {
         });
 
         // X^{\gamma - 1} * (\sum_{i = 0}^{\gamma - 1} c_i^2)
-        let pt2 = PlaintextList::from_container({
-            let sum_sqr = target.iter().map(|x| x.wrapping_mul(*x).wrapping_mul(delta)).sum();
-            let mut container = vec![0u64; self.ctx.params.polynomial_size.0];
-            container[gamma - 1] = sum_sqr;
-            container
-        });
+        let pt2 = target.iter().map(|x| x.wrapping_mul(*x)).sum();
 
         // now encrypt the two plaintexts
-        let mut glwe = GlweCiphertext::new(
+        let mut c = GlweCiphertext::new(
             0u64,
             self.ctx.params.glwe_dimension.to_glwe_size(),
             self.ctx.params.polynomial_size,
         );
-        let mut glwe2 = glwe.clone();
-
         encrypt_glwe_ciphertext(
             self.key.get_glwe_sk_ref(),
-            &mut glwe,
+            &mut c,
             &pt,
             self.ctx.params.glwe_modular_std_dev,
             &mut self.ctx.encryption_rng,
         );
-        encrypt_glwe_ciphertext(
-            self.key.get_glwe_sk_ref(),
-            &mut glwe2,
-            &pt2,
-            self.ctx.params.glwe_modular_std_dev,
-            &mut self.ctx.encryption_rng,
-        );
-        (glwe, glwe2)
+        let c2 = self.key.encrypt(pt2);
+        (c, c2)
     }
 }
 
