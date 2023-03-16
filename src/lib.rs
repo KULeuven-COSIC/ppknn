@@ -46,10 +46,7 @@ pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
 }
 
 fn decode(params: Parameters, x: u64) -> u64 {
-
-    let delta = (1_u64 << 63)
-        / (params.message_modulus.0 * params.carry_modulus.0)
-        as u64;
+    let delta = (1_u64 << 63) / (params.message_modulus.0 * params.carry_modulus.0) as u64;
 
     //The bit before the message
     let rounding_bit = delta >> 1;
@@ -97,7 +94,10 @@ impl KnnServer {
                     &c.get_body().as_polynomial(),
                     &m.as_polynomial(),
                 );
-                slice_wrapping_scalar_mul_assign(&mut glwe.as_mut(), self.params.message_modulus.0 as u64 - 2u64);
+                slice_wrapping_scalar_mul_assign(
+                    &mut glwe.as_mut(),
+                    self.params.message_modulus.0 as u64 - 2u64,
+                );
                 // slice_wrapping_opposite_assign(&mut glwe.as_mut()); // combine with scalar_mul?
 
                 // sample extract the \gamma -1 th coeff
@@ -215,8 +215,8 @@ impl KnnServer {
     }
 
     fn delta(&self) -> u64 {
-        let delta = (1_u64 << 63)
-            / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+        let delta =
+            (1_u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
         delta
     }
 
@@ -323,6 +323,13 @@ impl KnnServer {
         res
     }
 
+    pub fn trivially_encrypt(&self, x: u64) -> Ciphertext {
+        let mut out = self.new_ct();
+        let pt = Plaintext(x * self.delta());
+        trivially_encrypt_lwe_ciphertext(&mut out.ct, pt);
+        out
+    }
+
     pub fn raw_sub(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Ciphertext {
         let mut res = self.new_ct();
         slice_wrapping_sub(&mut res.ct.as_mut(), &lhs.ct.as_ref(), &rhs.ct.as_ref());
@@ -363,8 +370,8 @@ impl KnnServer {
 }
 
 pub struct KnnClient {
-    key: ClientKey,
-    ctx: Context,
+    pub key: ClientKey,
+    pub ctx: Context,
 }
 
 impl KnnClient {
@@ -433,10 +440,7 @@ impl KnnClient {
         delta
     }
 
-    pub fn make_query(
-        &mut self,
-        target: &[u64],
-    ) -> (GlweCiphertextOwned<u64>, Ciphertext) {
+    pub fn make_query(&mut self, target: &[u64]) -> (GlweCiphertextOwned<u64>, Ciphertext) {
         let gamma = target.len();
         let n = self.ctx.params.polynomial_size.0;
         let padding = vec![0u64; n - gamma];
@@ -727,8 +731,8 @@ mod test {
             let data = vec![vec![0, 1, 0, 0u64]];
             let target = vec![2, 0, 0, 0u64];
             server.set_data(data);
-            let (glwe, glwe2) = client.make_query(&target);
-            let distances = server.compute_distances(&glwe, &glwe2);
+            let (glwe, lwe) = client.make_query(&target);
+            let distances = server.compute_distances(&glwe, &lwe);
 
             let expected = 5u64;
             assert_eq!(client.key.decrypt(&distances[0]), expected);
@@ -738,8 +742,8 @@ mod test {
             let data = vec![vec![0, 0, 1, 3u64]];
             let target = vec![0, 0, 1, 1u64];
             server.set_data(data);
-            let (glwe, glwe2) = client.make_query(&target);
-            let distances = server.compute_distances(&glwe, &glwe2);
+            let (glwe, lwe) = client.make_query(&target);
+            let distances = server.compute_distances(&glwe, &lwe);
 
             let expected = 4u64;
             assert_eq!(client.key.decrypt(&distances[0]), expected);

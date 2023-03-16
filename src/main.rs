@@ -1,4 +1,6 @@
 use ppknn::*;
+use std::time::Instant;
+use tfhe::shortint::prelude::*;
 
 fn test_batcher() {
     for e in 0..10 {
@@ -131,6 +133,52 @@ fn test_tfhe() {
 }
 */
 
+const PARAMS: Parameters = Parameters {
+    lwe_dimension: LweDimension(742),
+    glwe_dimension: GlweDimension(1),
+    polynomial_size: PolynomialSize(2048),
+    lwe_modular_std_dev: StandardDev(0.000007069849454709433),
+    glwe_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
+    pbs_level: DecompositionLevelCount(6),
+    pbs_base_log: DecompositionBaseLog(3),
+    ks_level: DecompositionLevelCount(6),
+    ks_base_log: DecompositionBaseLog(3),
+    pfks_level: DecompositionLevelCount(6),
+    pfks_base_log: DecompositionBaseLog(3),
+    pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
+    cbs_level: DecompositionLevelCount(0),
+    cbs_base_log: DecompositionBaseLog(0),
+    message_modulus: MessageModulus(32),
+    carry_modulus: CarryModulus(1),
+};
+
 fn main() {
-    test_batcher();
+    // test_batcher();
+    let (mut client, mut server) = setup(PARAMS);
+    let k = 3usize;
+    let data = vec![vec![0, 1, 0, 0u64]; 40];
+    let target = vec![2, 0, 0, 0u64];
+    let labels = (0..data.len())
+        .map(|_| server.trivially_encrypt(0))
+        .collect::<Vec<_>>();
+
+    server.set_data(data);
+    let (glwe, lwe) = client.make_query(&target);
+    // setup dummy labels
+
+    let server_start = Instant::now();
+    let distances = server.compute_distances(&glwe, &lwe);
+    let enc_vec = distances
+        .into_iter()
+        .zip(labels.into_iter())
+        .map(|(d, l)| EncItem::new(d, l))
+        .collect::<Vec<_>>();
+    let mut sorter = BatcherSort::new_k(EncCmp::boxed(enc_vec, PARAMS, server), k);
+    sorter.sort();
+    println!("knn duration: {} ms", server_start.elapsed().as_millis());
+
+    // show output
+    for i in 0..k {
+        println!("output[{}]={:?}", i, sorter.inner()[i].decrypt(&client.key));
+    }
 }
