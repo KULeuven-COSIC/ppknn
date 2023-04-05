@@ -86,8 +86,7 @@ pub struct EncCmp {
 }
 
 impl EncCmp {
-    pub fn boxed(vs: Vec<EncItem>, params: Parameters, server: KnnServer) -> Box<Self> {
-        Box::new(Self {
+    pub fn boxed(vs: Vec<EncItem>, params: Parameters, server: KnnServer) -> Box<Self> { Box::new(Self {
             cmp_count: 0,
             vs,
             params,

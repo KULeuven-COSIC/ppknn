@@ -39,6 +39,23 @@ pub fn read_or_gen_keys(param: Parameters) -> (ClientKey, ServerKey) {
     }
 }
 
+pub fn parse_csv(path: &std::path::Path) -> (Vec<Vec<u64>>, Vec<u64>) {
+    let fhandle = fs::File::open(path).expect("csv file not found, consider using --artificial");
+
+    let mut model_vec: Vec<Vec<u64>> = vec![];
+    let mut class: Vec<u64> = vec![];
+    let mut reader = csv::Reader::from_reader(fhandle);
+    for res in reader.records() {
+        let record = res.unwrap();
+        let mut row: Vec<_> = record.iter().map(|s| s.parse().unwrap()).collect();
+        let last = row.pop().unwrap();
+        model_vec.push(row);
+        class.push(last);
+    }
+
+    (model_vec, class)
+}
+
 pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
     vs.iter()
         .map(|v| EncItem::new(client_key.encrypt(v.0), client_key.encrypt(v.1)))
