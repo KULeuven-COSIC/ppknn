@@ -119,6 +119,30 @@ impl KnnServer {
             .collect()
     }
 
+    pub fn lower_precision(&self, ct: &mut Ciphertext, orig_modulus: usize) {
+        // we assume the original ciphertext is encoded with higher precision
+        // than the TFHE parameter
+        // the number of elements that gets mapped into one element in the smaller message modulus
+        let precision_ratio = orig_modulus / self.params.message_modulus.0;
+        assert!(precision_ratio > 1);
+
+        // original delta
+        let delta = (1_u64 << 63) / (orig_modulus * self.params.carry_modulus.0) as u64;
+
+        // we need to "recenter" the plaintext space before doing the bootstrap
+        // original pt: (0, Delta, 2*Delta, ..., (precision_ratio-1)*Delta)
+        // is mapped to one element (0 in this example) in the new plaintext space
+        // the recentering is done by subtracting
+        // half of the maximum value (precision_ratio-1)*Delta
+        // from the original pt
+        let shift = Plaintext(
+            (((delta * (precision_ratio as u64 - 1)) as f64 / 2.).round() as u64).wrapping_neg(),
+        );
+        lwe_ciphertext_plaintext_add_assign(&mut ct.ct, shift);
+
+        self.key.keyswitch_bootstrap_assign(ct)
+    }
+
     pub fn lwe_to_glwe(&self, ct: &Ciphertext) -> GlweCiphertextOwned<u64> {
         let mut output_glwe = GlweCiphertext::new(
             0,
@@ -375,6 +399,25 @@ pub struct KnnClient {
 }
 
 impl KnnClient {
+    pub fn lwe_encrypt_with_modulus(&mut self, x: u64, modulus: usize) -> Ciphertext {
+        // this function ignores the carry
+        let delta = (1_u64 << 63) / (modulus * self.ctx.params.carry_modulus.0) as u64;
+        let sk = self.key.get_lwe_sk_ref();
+        let pt = Plaintext(x * delta);
+        let ct = allocate_and_encrypt_new_lwe_ciphertext(
+            sk,
+            pt,
+            self.ctx.params.lwe_modular_std_dev,
+            &mut self.ctx.encryption_rng,
+        );
+        Ciphertext {
+            ct,
+            degree: Degree(self.ctx.params.message_modulus.0 - 1),
+            message_modulus: self.ctx.params.message_modulus,
+            carry_modulus: self.ctx.params.carry_modulus,
+        }
+    }
+
     pub fn lwe_encode_encrypt(&mut self, x: u64) -> Ciphertext {
         let ct = lwe_encode_encrypt(&self.key.get_lwe_sk_ref(), &mut self.ctx, x);
         Ciphertext {
@@ -748,5 +791,31 @@ mod test {
             let expected = 4u64;
             assert_eq!(client.key.decrypt(&distances[0]), expected);
         }
+    }
+
+    #[test]
+    fn test_lower_precision() {
+        let param = Parameters {
+            message_modulus: MessageModulus(16),
+            ..TEST_PARAM
+        };
+        let (mut client, server) = setup(param);
+        let initial_modulus = MessageModulus(128);
+        let final_modulus = server.params.message_modulus;
+        let mut error_count = 0u64;
+        let ratio = (initial_modulus.0 / final_modulus.0) as u64;
+        for m in 0..initial_modulus.0 as u64 {
+            let mut ct = client.lwe_encrypt_with_modulus(m, initial_modulus.0);
+            server.lower_precision(&mut ct, initial_modulus.0);
+            let expected = m / ratio;
+            let actual = client.key.decrypt(&ct);
+            println!("{} => {} =? {}", m, actual, expected);
+            if actual != expected {
+                error_count += 1;
+            }
+        }
+        // the lowering of precision is not perfect so there are some potential errors
+        // maybe we need to do modulus switching
+        assert!(error_count < initial_modulus.0 as u64 / ratio);
     }
 }

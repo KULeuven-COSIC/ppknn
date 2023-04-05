@@ -192,7 +192,7 @@ mod test {
         last_polynomial[0] = u64::MAX;
 
         // setup the plaintext and encrypt
-        let m = 2u64;
+        let m = 3u64;
         let mut encoded_m = m;
         ctx.codec.encode(&mut encoded_m);
         let plaintext_list = PlaintextList::from_container(vec![encoded_m]);
@@ -211,13 +211,14 @@ mod test {
 
         // generate ksk
         // we don't use f: x -> x.wrapping_neg(), then we need wrapping_neg during decoding
+        // let shift = 1u64;
         par_generate_lwe_private_functional_packing_keyswitch_key(
             &lwe_sk,
             &glwe_sk,
             &mut pfpksk,
             ctx.params.pfks_modular_std_dev,
             &mut ctx.encryption_rng,
-            |x| x.wrapping_neg(),
+            |x| (x / 2).wrapping_neg(),
             &last_polynomial,
         );
 
@@ -244,7 +245,7 @@ mod test {
 
         let expected = PlaintextList::from_container({
             let mut tmp = vec![0u64; ctx.params.polynomial_size.0];
-            tmp[0] = m;
+            tmp[0] = m / 2;
             tmp
         });
         assert_eq!(output_plaintext, expected);
