@@ -1,4 +1,3 @@
-use crate::context::Context;
 use tfhe::core_crypto::algorithms::polynomial_algorithms::*;
 use tfhe::core_crypto::commons::math::decomposition::SignedDecomposer;
 use tfhe::core_crypto::entities::{
@@ -20,9 +19,9 @@ impl LWEtoGLWEKeyswitchKey {
     pub fn from_lwe_glwe_sk(
         lwe_sk: &LweSecretKeyOwned<u64>,
         glwe_sk: &GlweSecretKeyOwned<u64>,
-        ctx: &mut Context,
+        params: Parameters,
+        encryption_rng: &mut EncryptionRandomGenerator<ActivatedRandomGenerator>,
     ) -> Self {
-        let params = ctx.params;
         let mut out: Vec<Vec<GlweCiphertextOwned<u64>>> = vec![];
         for elt in lwe_sk.as_ref().iter() {
             // elt is &u64
@@ -48,7 +47,7 @@ impl LWEtoGLWEKeyswitchKey {
                         &mut glwe,
                         &plaintext_list,
                         params.glwe_modular_std_dev,
-                        &mut ctx.encryption_rng,
+                        encryption_rng,
                     );
                     glwe
                 })
@@ -118,26 +117,27 @@ pub fn lwe_to_glwe_keyswitch(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::context::*;
     use crate::test::TEST_PARAM;
+    use crate::{decode, gen_glwe_sk, gen_lwe_sk};
     use tfhe::core_crypto::algorithms::glwe_encryption::decrypt_glwe_ciphertext;
+    use tfhe::shortint::gen_keys;
 
     #[test]
     fn test_decomposition() {
-        let ctx = Context::new(TEST_PARAM);
+        let params = TEST_PARAM;
         // test < g^{-1}(a), (s * g^0, ..., s * g^{l-1} > ~= a*s >
         let a = (1 << 40) + (1 << 42) + (1 << 50);
         let s = 3u64;
-        let decomposer = SignedDecomposer::new(ctx.params.ks_base_log, ctx.params.ks_level);
+        let decomposer = SignedDecomposer::new(params.ks_base_log, params.ks_level);
         let closest = decomposer.closest_representable(a);
         let decomposer_iter = decomposer.decompose(closest);
-        let out = (1..=ctx.params.ks_level.0)
+        let out = (1..=params.ks_level.0)
             .into_iter()
             .rev()
             .zip(decomposer_iter)
             .map(|(level, term)| {
                 assert_eq!(term.level().0, level);
-                let shift: usize = (u64::BITS as usize) - ctx.params.ks_base_log.0 * level;
+                let shift: usize = (u64::BITS as usize) - params.ks_base_log.0 * level;
                 println!("value={}, shift={}", term.value(), shift);
                 (term.value() << shift) * s
             })
@@ -148,25 +148,34 @@ mod test {
     #[test]
     #[ignore]
     fn test_lwe_to_glwe() {
-        let mut ctx = Context::new(TEST_PARAM);
-        let lwe_sk = ctx.gen_lwe_sk();
-        let glwe_sk = ctx.gen_glwe_sk();
-        let ksk = LWEtoGLWEKeyswitchKey::from_lwe_glwe_sk(&lwe_sk, &glwe_sk, &mut ctx);
+        let params = TEST_PARAM;
+        let (client, _) = gen_keys(params);
+        let mut seeder = new_seeder();
+        let mut secret_rng = SecretRandomGenerator::<ActivatedRandomGenerator>::new(seeder.seed());
+        let mut encryption_rng = EncryptionRandomGenerator::<ActivatedRandomGenerator>::new(
+            seeder.seed(),
+            seeder.as_mut(),
+        );
+
+        let lwe_sk = gen_lwe_sk(params, &mut secret_rng);
+        let glwe_sk = gen_glwe_sk(params, &mut secret_rng);
+        let ksk =
+            LWEtoGLWEKeyswitchKey::from_lwe_glwe_sk(&lwe_sk, &glwe_sk, params, &mut encryption_rng);
         let m = 1u64;
-        let ct_before = lwe_encode_encrypt(&lwe_sk, &mut ctx, m);
+        let ct_before = client.encrypt(m);
         assert_eq!(ksk.inner.len(), lwe_sk.as_ref().len());
 
-        let ct_after = lwe_to_glwe_keyswitch(&ksk, &ct_before);
-        let mut out = PlaintextList::new(0u64, PlaintextCount(ctx.params.polynomial_size.0));
+        let ct_after = lwe_to_glwe_keyswitch(&ksk, &ct_before.ct);
+        let mut out = PlaintextList::new(0u64, PlaintextCount(params.polynomial_size.0));
         decrypt_glwe_ciphertext(&glwe_sk, &ct_after, &mut out);
-        out.as_mut().iter_mut().for_each(|x| {
-            ctx.codec.decode(x);
-        });
+        out.as_mut()
+            .iter_mut()
+            .for_each(|x| *x = decode(params, *x));
 
         assert_eq!(
             out,
             PlaintextList::from_container({
-                let mut tmp = vec![0u64; ctx.params.polynomial_size.0];
+                let mut tmp = vec![0u64; params.polynomial_size.0];
                 tmp[0] = m;
                 tmp
             })
@@ -175,57 +184,61 @@ mod test {
 
     #[test]
     fn test_functional_keyswitch() {
-        let mut ctx = Context::new(TEST_PARAM);
-        let lwe_sk = ctx.gen_lwe_sk();
-        let glwe_sk = ctx.gen_glwe_sk();
+        let params = TEST_PARAM;
+        let (client, _) = gen_keys(params);
+        let mut seeder = new_seeder();
+        let mut encryption_rng = EncryptionRandomGenerator::<ActivatedRandomGenerator>::new(
+            seeder.seed(),
+            seeder.as_mut(),
+        );
 
         let mut pfpksk = LwePrivateFunctionalPackingKeyswitchKey::new(
             0,
-            ctx.params.pfks_base_log,
-            ctx.params.pfks_level,
-            ctx.params.lwe_dimension,
-            ctx.params.glwe_dimension.to_glwe_size(),
-            ctx.params.polynomial_size,
+            params.pfks_base_log,
+            params.pfks_level,
+            client.get_lwe_sk_ref().lwe_dimension(),
+            params.glwe_dimension.to_glwe_size(),
+            params.polynomial_size,
         );
 
-        let mut last_polynomial = Polynomial::new(0, ctx.params.polynomial_size);
+        let mut last_polynomial = Polynomial::new(0, params.polynomial_size);
         last_polynomial[0] = u64::MAX;
 
         // setup the plaintext and encrypt
-        let m = 3u64;
-        let mut encoded_m = m;
-        ctx.codec.encode(&mut encoded_m);
+        let delta = (1_u64 << 63) / (params.message_modulus.0 * params.carry_modulus.0) as u64;
+        let m = 1u64;
+        let encoded_m = m * delta;
         let plaintext_list = PlaintextList::from_container(vec![encoded_m]);
         let mut lwe_ciphertext_list = LweCiphertextList::new(
             0u64,
-            ctx.params.lwe_dimension.to_lwe_size(),
+            client.get_lwe_sk_ref().lwe_dimension().to_lwe_size(),
             LweCiphertextCount(plaintext_list.plaintext_count().0),
         );
         encrypt_lwe_ciphertext_list(
-            &lwe_sk,
+            client.get_lwe_sk_ref(),
             &mut lwe_ciphertext_list,
             &plaintext_list,
-            ctx.params.lwe_modular_std_dev,
-            &mut ctx.encryption_rng,
+            params.lwe_modular_std_dev,
+            &mut encryption_rng,
         );
 
         // generate ksk
         // we don't use f: x -> x.wrapping_neg(), then we need wrapping_neg during decoding
         // let shift = 1u64;
         par_generate_lwe_private_functional_packing_keyswitch_key(
-            &lwe_sk,
-            &glwe_sk,
+            client.get_lwe_sk_ref(),
+            client.get_glwe_sk_ref(),
             &mut pfpksk,
-            ctx.params.pfks_modular_std_dev,
-            &mut ctx.encryption_rng,
-            |x| (x / 2).wrapping_neg(),
+            params.pfks_modular_std_dev,
+            &mut encryption_rng,
+            |x| (x * 2).wrapping_neg(),
             &last_polynomial,
         );
 
         let mut output_glwe = GlweCiphertext::new(
             0,
-            ctx.params.glwe_dimension.to_glwe_size(),
-            ctx.params.polynomial_size,
+            params.glwe_dimension.to_glwe_size(),
+            params.polynomial_size,
         );
 
         // NOTE: what if we try `private_functional_keyswitch_lwe_ciphertext_into_glwe_ciphertext`?
@@ -235,17 +248,20 @@ mod test {
             &lwe_ciphertext_list,
         );
 
-        let mut output_plaintext =
-            PlaintextList::new(0, PlaintextCount(ctx.params.polynomial_size.0));
-        decrypt_glwe_ciphertext(&glwe_sk, &output_glwe, &mut output_plaintext);
-        output_plaintext.iter_mut().for_each(|mut x| {
-            ctx.codec.decode(&mut x.0);
+        let mut output_plaintext = PlaintextList::new(0, PlaintextCount(params.polynomial_size.0));
+        decrypt_glwe_ciphertext(
+            client.get_glwe_sk_ref(),
+            &output_glwe,
+            &mut output_plaintext,
+        );
+        output_plaintext.iter_mut().for_each(|x| {
+            *x.0 = decode(params, *x.0)
             // *x.0 = x.0.wrapping_neg() % ctx.params.message_modulus.0 as u64;
         });
 
         let expected = PlaintextList::from_container({
-            let mut tmp = vec![0u64; ctx.params.polynomial_size.0];
-            tmp[0] = m / 2;
+            let mut tmp = vec![0u64; params.polynomial_size.0];
+            tmp[0] = m * 2;
             tmp
         });
         assert_eq!(output_plaintext, expected);
