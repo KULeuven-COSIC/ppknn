@@ -97,6 +97,7 @@ pub struct KnnServer {
     params: Parameters,
     gamma: usize,
     data: Vec<PlaintextListOwned<u64>>,
+    labels: Vec<Ciphertext>, // trivially encrypted labels
 }
 
 impl KnnServer {
@@ -151,6 +152,20 @@ impl KnnServer {
                 lwe
             })
             .collect()
+    }
+
+    pub fn compute_distances_with_labels(
+        &self,
+        c: &GlweCiphertextOwned<u64>,
+        c2: &Ciphertext,
+    ) -> Vec<EncItem> {
+        let distances = self.compute_distances(c, c2);
+        let enc_vec = distances
+            .into_iter()
+            .zip(self.labels.iter())
+            .map(|(d, l)| EncItem::new(d, l.clone()))
+            .collect::<Vec<_>>();
+        enc_vec
     }
 
     pub fn lower_precision(&self, ct: &mut Ciphertext, orig_modulus: usize) {
@@ -423,6 +438,13 @@ impl KnnServer {
         self.gamma = gamma;
         self.data = data;
     }
+
+    pub fn set_labels(&mut self, labels: Vec<u64>) {
+        self.labels = labels
+            .into_iter()
+            .map(|l| self.trivially_encrypt(l))
+            .collect::<Vec<_>>();
+    }
 }
 
 pub struct KnnClient {
@@ -557,14 +579,20 @@ pub fn setup(params: Parameters) -> (KnnClient, KnnServer) {
             params,
             gamma: 0,
             data: vec![],
+            labels: vec![],
         },
     )
 }
 
 // The data should not be encoded
-pub fn setup_with_data(params: Parameters, data: Vec<Vec<u64>>) -> (KnnClient, KnnServer) {
+pub fn setup_with_data(
+    params: Parameters,
+    data: Vec<Vec<u64>>,
+    labels: Vec<u64>,
+) -> (KnnClient, KnnServer) {
     let (client, mut server) = setup(params);
     server.set_data(data);
+    server.set_labels(labels);
     (client, server)
 }
 
