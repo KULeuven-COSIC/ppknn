@@ -117,7 +117,7 @@ pub fn simulate(
     target: Vec<u64>,
 ) -> (Vec<(u64, u64)>, u128) {
     let (mut client, server) =
-        setup_with_data(params, data, labels, params.message_modulus.0 as u64);
+        setup_with_data(params, data, labels, params.message_modulus.0 as u64 * 2);
     let (glwe, lwe) = client.make_query(&target);
     // setup dummy labels
 
@@ -139,8 +139,8 @@ pub fn simulate(
 fn main() {
     // test_batcher();
     let k = 3usize;
-    let data = vec![vec![0, 1, 0, 0u64]; 40];
-    let target = vec![2, 0, 0, 0u64];
+    let data = vec![vec![0, 7, 0, 0u64]; 40];
+    let target = vec![3, 0, 0, 0u64];
     let labels = vec![0u64; 40];
 
     let (output, dur) = simulate(PARAMS, k, data, labels, target);

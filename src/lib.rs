@@ -108,7 +108,7 @@ impl KnnServer {
         c2: &Ciphertext,
     ) -> Vec<Ciphertext> {
         let delta = self.dist_delta;
-        self.data
+        let mut distances: Vec<_> = self.data
             .iter()
             .map(|m| {
                 // TODO convert to fft for mul?
@@ -152,7 +152,14 @@ impl KnnServer {
                 lwe_ciphertext_plaintext_add_assign(&mut lwe.ct, m2);
                 lwe
             })
-            .collect()
+            .collect();
+
+        if self.dist_delta != self.delta() {
+            distances.iter_mut().for_each(|x| {
+                self.lower_precision(x)
+            });
+        }
+        distances
     }
 
     pub fn compute_distances_with_labels(
