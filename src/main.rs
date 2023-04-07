@@ -116,7 +116,8 @@ pub fn simulate(
     labels: Vec<u64>,
     target: Vec<u64>,
 ) -> (Vec<(u64, u64)>, u128) {
-    let (mut client, server) = setup_with_data(params, data, labels);
+    let (mut client, server) =
+        setup_with_data(params, data, labels, params.message_modulus.0 as u64);
     let (glwe, lwe) = client.make_query(&target);
     // setup dummy labels
 

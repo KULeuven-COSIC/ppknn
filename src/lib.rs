@@ -80,7 +80,7 @@ pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
 }
 
 pub fn decode(params: Parameters, x: u64) -> u64 {
-    let delta = (1_u64 << 63) / (params.message_modulus.0 * params.carry_modulus.0) as u64;
+    let delta = (1u64 << 63) / (params.message_modulus.0 * params.carry_modulus.0) as u64;
 
     //The bit before the message
     let rounding_bit = delta >> 1;
@@ -95,6 +95,7 @@ pub struct KnnServer {
     key: ServerKey,
     lwe_to_glwe_ksk: LwePrivateFunctionalPackingKeyswitchKeyOwned<u64>,
     params: Parameters,
+    dist_delta: u64, // delta value for distance computation
     gamma: usize,
     data: Vec<PlaintextListOwned<u64>>,
     labels: Vec<Ciphertext>, // trivially encrypted labels
@@ -106,7 +107,7 @@ impl KnnServer {
         c: &GlweCiphertextOwned<u64>,
         c2: &Ciphertext,
     ) -> Vec<Ciphertext> {
-        let delta = self.delta();
+        let delta = self.dist_delta;
         self.data
             .iter()
             .map(|m| {
@@ -168,15 +169,14 @@ impl KnnServer {
         enc_vec
     }
 
-    pub fn lower_precision(&self, ct: &mut Ciphertext, orig_modulus: usize) {
+    pub fn lower_precision(&self, ct: &mut Ciphertext) {
         // we assume the original ciphertext is encoded with higher precision
         // than the TFHE parameter
         // the number of elements that gets mapped into one element in the smaller message modulus
-        let precision_ratio = orig_modulus / self.params.message_modulus.0;
+        let delta = self.dist_delta;
+        let orig_modulus = (1u64 << 63) / (delta * self.params.carry_modulus.0 as u64);
+        let precision_ratio = orig_modulus / self.params.message_modulus.0 as u64;
         assert!(precision_ratio > 1);
-
-        // original delta
-        let delta = (1_u64 << 63) / (orig_modulus * self.params.carry_modulus.0) as u64;
 
         // we need to "recenter" the plaintext space before doing the bootstrap
         // original pt: (0, Delta, 2*Delta, ..., (precision_ratio-1)*Delta)
@@ -289,7 +289,7 @@ impl KnnServer {
 
     fn delta(&self) -> u64 {
         let delta =
-            (1_u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+            (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
         delta
     }
 
@@ -395,8 +395,12 @@ impl KnnServer {
     }
 
     pub fn trivially_encrypt(&self, x: u64) -> Ciphertext {
+        self.trivially_encrypt_with_delta(x, self.delta())
+    }
+
+    pub fn trivially_encrypt_with_delta(&self, x: u64, delta: u64) -> Ciphertext {
         let mut out = self.new_ct();
-        let pt = Plaintext(x * self.delta());
+        let pt = Plaintext(x * delta);
         trivially_encrypt_lwe_ciphertext(&mut out.ct, pt);
         out
     }
@@ -442,7 +446,7 @@ impl KnnServer {
     pub fn set_labels(&mut self, labels: Vec<u64>) {
         self.labels = labels
             .into_iter()
-            .map(|l| self.trivially_encrypt(l))
+            .map(|l| self.trivially_encrypt_with_delta(l, self.dist_delta))
             .collect::<Vec<_>>();
     }
 }
@@ -456,7 +460,7 @@ pub struct KnnClient {
 impl KnnClient {
     pub fn lwe_encrypt_with_modulus(&mut self, x: u64, modulus: usize) -> Ciphertext {
         // this function ignores the carry
-        let delta = (1_u64 << 63) / (modulus * self.params.carry_modulus.0) as u64;
+        let delta = (1u64 << 63) / (modulus * self.params.carry_modulus.0) as u64;
         let sk = self.key.get_lwe_sk_ref();
         let pt = Plaintext(x * delta);
         let ct = allocate_and_encrypt_new_lwe_ciphertext(
@@ -487,7 +491,7 @@ impl KnnClient {
 
     fn delta(&self) -> u64 {
         let delta =
-            (1_u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
+            (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
         delta
     }
 
@@ -562,11 +566,18 @@ pub fn gen_ksk(
 }
 
 pub fn setup(params: Parameters) -> (KnnClient, KnnServer) {
+    let modulus = params.message_modulus.0 as u64;
+    setup_with_modulus(params, modulus)
+}
+
+pub fn setup_with_modulus(params: Parameters, dist_modulus: u64) -> (KnnClient, KnnServer) {
     let mut seeder = new_seeder();
     let mut encryption_rng =
         EncryptionRandomGenerator::<ActivatedRandomGenerator>::new(seeder.seed(), seeder.as_mut());
     let (client_key, server_key) = gen_keys(params);
     let lwe_to_glwe_ksk = gen_ksk(&client_key, &mut encryption_rng);
+
+    let dist_delta = (1u64 << 63) / (dist_modulus * params.carry_modulus.0 as u64);
     (
         KnnClient {
             key: client_key,
@@ -577,6 +588,7 @@ pub fn setup(params: Parameters) -> (KnnClient, KnnServer) {
             key: server_key,
             lwe_to_glwe_ksk,
             params,
+            dist_delta,
             gamma: 0,
             data: vec![],
             labels: vec![],
@@ -589,8 +601,9 @@ pub fn setup_with_data(
     params: Parameters,
     data: Vec<Vec<u64>>,
     labels: Vec<u64>,
+    dist_modulus: u64,
 ) -> (KnnClient, KnnServer) {
-    let (client, mut server) = setup(params);
+    let (client, mut server) = setup_with_modulus(params, dist_modulus);
     server.set_data(data);
     server.set_labels(labels);
     (client, server)
@@ -846,14 +859,14 @@ mod test {
             message_modulus: MessageModulus(16),
             ..TEST_PARAM
         };
-        let (mut client, server) = setup(param);
         let initial_modulus = MessageModulus(128);
+        let (mut client, server) = setup_with_modulus(param, initial_modulus.0 as u64);
         let final_modulus = server.params.message_modulus;
         let mut error_count = 0u64;
         let ratio = (initial_modulus.0 / final_modulus.0) as u64;
         for m in 0..initial_modulus.0 as u64 {
             let mut ct = client.lwe_encrypt_with_modulus(m, initial_modulus.0);
-            server.lower_precision(&mut ct, initial_modulus.0);
+            server.lower_precision(&mut ct);
             let expected = m / ratio;
             let actual = client.key.decrypt(&ct);
             println!("{} => {} =? {}", m, actual, expected);
