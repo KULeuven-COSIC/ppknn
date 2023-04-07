@@ -108,7 +108,8 @@ impl KnnServer {
         c2: &Ciphertext,
     ) -> Vec<Ciphertext> {
         let delta = self.dist_delta;
-        let mut distances: Vec<_> = self.data
+        let mut distances: Vec<_> = self
+            .data
             .iter()
             .map(|m| {
                 // TODO convert to fft for mul?
@@ -155,9 +156,7 @@ impl KnnServer {
             .collect();
 
         if self.dist_delta != self.delta() {
-            distances.iter_mut().for_each(|x| {
-                self.lower_precision(x)
-            });
+            distances.iter_mut().for_each(|x| self.lower_precision(x));
         }
         distances
     }
