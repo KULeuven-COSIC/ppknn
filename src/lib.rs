@@ -120,13 +120,15 @@ impl KnnServer {
                     .as_mut_polynomial_list()
                     .iter_mut()
                     .for_each(|mut mask| {
-                        polynomial_wrapping_mul(
+                        // polynomial_wrapping_mul(
+                        polynomial_karatsuba_wrapping_mul(
                             &mut mask,
                             &c.get_mask().as_polynomial_list().get(0),
                             &m.as_polynomial(),
                         );
                     });
-                polynomial_wrapping_mul(
+                // polynomial_wrapping_mul(
+                polynomial_karatsuba_wrapping_mul(
                     &mut glwe.get_mut_body().as_mut_polynomial(),
                     &c.get_body().as_polynomial(),
                     &m.as_polynomial(),
@@ -217,6 +219,7 @@ impl KnnServer {
         glwe: &GlweCiphertextOwned<u64>,
         poly: &PolynomialOwned<u64>,
     ) -> GlweCiphertextOwned<u64> {
+        // TODO consider using fft
         let mut out = GlweCiphertextOwned::new(
             0u64,
             self.params.glwe_dimension.to_glwe_size(),
@@ -232,7 +235,8 @@ impl KnnServer {
                     &poly,
                 );
             });
-        polynomial_wrapping_mul(
+        // polynomial_wrapping_mul(
+        polynomial_karatsuba_wrapping_mul(
             &mut out.get_mut_body().as_mut_polynomial(),
             &glwe.get_body().as_polynomial(),
             &poly,
@@ -618,6 +622,9 @@ pub fn setup_with_data(
 #[cfg(test)]
 mod test {
     use super::*;
+    use dyn_stack::{mem::GlobalMemBuffer, DynStack, ReborrowMut};
+    use tfhe::core_crypto::fft_impl::c64;
+    use tfhe::core_crypto::fft_impl::math::polynomial::FourierPolynomial;
 
     pub(crate) const TEST_PARAM: Parameters = Parameters {
         lwe_dimension: LweDimension(742),
@@ -891,5 +898,37 @@ mod test {
             );
             assert_eq!(actual, expected);
         }
+    }
+
+    #[test]
+    fn test_fft() {
+        let fft = Fft::new(TEST_PARAM.polynomial_size);
+        let fft = fft.as_view();
+        let n = 2048usize;
+
+        let mut fourier = FourierPolynomial {
+            data: vec![c64::default(); n / 2],
+        };
+
+        let mut mem = GlobalMemBuffer::new(
+            fft.forward_scratch()
+                .unwrap()
+                .and(fft.backward_scratch().unwrap()),
+        );
+        let mut stack = DynStack::new(&mut mem);
+
+        let input = Polynomial::from_container(vec![3u64; n]);
+        let mut output = Polynomial::new(0u64, PolynomialSize(n));
+        fft.forward_as_torus(
+            unsafe { fourier.as_mut_view().into_uninit() },
+            input.as_view(),
+            stack.rb_mut(),
+        );
+        fft.backward_as_torus(
+            unsafe { output.as_mut_view().into_uninit() },
+            fourier.as_view(),
+            stack.rb_mut(),
+        );
+        assert_eq!(output, input);
     }
 }
