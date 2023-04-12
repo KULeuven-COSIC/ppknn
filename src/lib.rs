@@ -198,6 +198,9 @@ impl KnnServer {
         self.key.keyswitch_bootstrap_assign(ct)
     }
 
+    pub fn lower_precision_with_acc(&self, ct: &mut Ciphertext) {
+    }
+
     pub fn lwe_to_glwe(&self, ct: &Ciphertext) -> GlweCiphertextOwned<u64> {
         let mut output_glwe = GlweCiphertext::new(
             0,
@@ -861,17 +864,28 @@ mod test {
 
     #[test]
     fn test_lower_precision() {
-        let param = Parameters {
+        let final_params = Parameters {
             message_modulus: MessageModulus(16),
             ..TEST_PARAM
         };
         let initial_modulus = MessageModulus(128);
-        let (mut client, server) = setup_with_modulus(param, initial_modulus.0 as u64);
+        let initial_params = Parameters {
+            message_modulus: initial_modulus,
+            ..TEST_PARAM
+        };
+        let (mut client, server) = setup_with_modulus(final_params, initial_modulus.0 as u64);
         let final_modulus = server.params.message_modulus;
         let mut error_count = 0u64;
         let ratio = (initial_modulus.0 / final_modulus.0) as u64;
         for m in 0..initial_modulus.0 as u64 {
             let mut ct = client.lwe_encrypt_with_modulus(m, initial_modulus.0);
+
+            // check for correct decryption
+            let encoded = decrypt_lwe_ciphertext(client.key.get_lwe_sk_ref(), &ct.ct);
+            let pt = decode(initial_params, encoded.0);
+            assert_eq!(pt, m);
+
+            // lower the precision
             server.lower_precision(&mut ct);
             let expected = m / ratio;
             let actual = client.key.decrypt(&ct);
