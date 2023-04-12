@@ -191,14 +191,11 @@ impl KnnServer {
         // half of the maximum value (precision_ratio-1)*Delta
         // from the original pt
         let shift = Plaintext(
-            (((delta * (precision_ratio as u64 - 1)) as f64 / 2.).round() as u64).wrapping_neg(),
+            ((delta * (precision_ratio as u64 - 1)) / 2).wrapping_neg(),
         );
         lwe_ciphertext_plaintext_add_assign(&mut ct.ct, shift);
 
         self.key.keyswitch_bootstrap_assign(ct)
-    }
-
-    pub fn lower_precision_with_acc(&self, ct: &mut Ciphertext) {
     }
 
     pub fn lwe_to_glwe(&self, ct: &Ciphertext) -> GlweCiphertextOwned<u64> {
@@ -468,7 +465,7 @@ pub struct KnnClient {
 
 impl KnnClient {
     pub fn lwe_encrypt_with_modulus(&mut self, x: u64, modulus: usize) -> Ciphertext {
-        // this function ignores the carry
+        // we still consider the padding bit
         let delta = (1u64 << 63) / (modulus * self.params.carry_modulus.0) as u64;
         let sk = self.key.get_lwe_sk_ref();
         let pt = Plaintext(x * delta);
@@ -587,6 +584,8 @@ pub fn setup_with_modulus(params: Parameters, dist_modulus: u64) -> (KnnClient, 
     let lwe_to_glwe_ksk = gen_ksk(&client_key, &mut encryption_rng);
 
     let dist_delta = (1u64 << 63) / (dist_modulus * params.carry_modulus.0 as u64);
+    assert_eq!(dist_delta % 2, 0);
+    assert!((params.message_modulus.0 as u64) < dist_delta);
     (
         KnnClient {
             key: client_key,
@@ -864,18 +863,32 @@ mod test {
 
     #[test]
     fn test_lower_precision() {
+        // we need bigger parameters for this test
         let final_params = Parameters {
-            message_modulus: MessageModulus(16),
-            ..TEST_PARAM
+            lwe_dimension: LweDimension(808),
+            glwe_dimension: GlweDimension(1),
+            polynomial_size: PolynomialSize(4096),
+            lwe_modular_std_dev: StandardDev(0.0000021124945159091033),
+            glwe_modular_std_dev: StandardDev(0.0000000000000000002168404344971009),
+            pbs_base_log: DecompositionBaseLog(22),
+            pbs_level: DecompositionLevelCount(1),
+            ks_level: DecompositionLevelCount(5),
+            ks_base_log: DecompositionBaseLog(3),
+            pfks_level: DecompositionLevelCount(1),
+            pfks_base_log: DecompositionBaseLog(23),
+            pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
+            cbs_level: DecompositionLevelCount(0),
+            cbs_base_log: DecompositionBaseLog(0),
+            message_modulus: MessageModulus(32),
+            carry_modulus: CarryModulus(1),
         };
-        let initial_modulus = MessageModulus(128);
+        let initial_modulus = MessageModulus(64);
         let initial_params = Parameters {
             message_modulus: initial_modulus,
-            ..TEST_PARAM
+            ..final_params
         };
         let (mut client, server) = setup_with_modulus(final_params, initial_modulus.0 as u64);
         let final_modulus = server.params.message_modulus;
-        let mut error_count = 0u64;
         let ratio = (initial_modulus.0 / final_modulus.0) as u64;
         for m in 0..initial_modulus.0 as u64 {
             let mut ct = client.lwe_encrypt_with_modulus(m, initial_modulus.0);
@@ -889,13 +902,8 @@ mod test {
             server.lower_precision(&mut ct);
             let expected = m / ratio;
             let actual = client.key.decrypt(&ct);
-            println!("{} => {} =? {}", m, actual, expected);
-            if actual != expected {
-                error_count += 1;
-            }
+            println!("m={m}, actual={actual}, expected={expected}, noise={:.2}", client.lwe_noise(&ct, expected));
+            assert_eq!(actual, expected);
         }
-        // the lowering of precision is not perfect so there are some potential errors
-        // maybe we need to do modulus switching
-        assert!(error_count < initial_modulus.0 as u64 / ratio);
     }
 }
