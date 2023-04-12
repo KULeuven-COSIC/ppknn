@@ -190,9 +190,7 @@ impl KnnServer {
         // the recentering is done by subtracting
         // half of the maximum value (precision_ratio-1)*Delta
         // from the original pt
-        let shift = Plaintext(
-            ((delta * (precision_ratio as u64 - 1)) / 2).wrapping_neg(),
-        );
+        let shift = Plaintext(((delta * (precision_ratio as u64 - 1)) / 2).wrapping_neg());
         lwe_ciphertext_plaintext_add_assign(&mut ct.ct, shift);
 
         self.key.keyswitch_bootstrap_assign(ct)
@@ -692,7 +690,6 @@ mod test {
         let ct_before = client.key.encrypt(pt);
         let ct_after = server.lwe_to_glwe(&ct_before);
 
-        /*
         {
             // test the key switching
             let mut output_plaintext =
@@ -702,8 +699,8 @@ mod test {
                 &ct_after,
                 &mut output_plaintext,
             );
-            output_plaintext.iter_mut().for_each(|mut x| {
-                client.ctx.codec.decode(&mut x.0);
+            output_plaintext.iter_mut().for_each(|x| {
+                *x.0 = decode(TEST_PARAM, *x.0);
             });
 
             let expected = PlaintextList::from_container({
@@ -713,7 +710,6 @@ mod test {
             });
             assert_eq!(output_plaintext, expected);
         }
-        */
 
         // we need to set the accumulator to be: ct_after * (X^0 + ... + X^{N-1})
         // where ct_after is an encryption of `pt`
@@ -865,22 +861,9 @@ mod test {
     fn test_lower_precision() {
         // we need bigger parameters for this test
         let final_params = Parameters {
-            lwe_dimension: LweDimension(808),
-            glwe_dimension: GlweDimension(1),
-            polynomial_size: PolynomialSize(4096),
-            lwe_modular_std_dev: StandardDev(0.0000021124945159091033),
-            glwe_modular_std_dev: StandardDev(0.0000000000000000002168404344971009),
-            pbs_base_log: DecompositionBaseLog(22),
-            pbs_level: DecompositionLevelCount(1),
-            ks_level: DecompositionLevelCount(5),
-            ks_base_log: DecompositionBaseLog(3),
-            pfks_level: DecompositionLevelCount(1),
-            pfks_base_log: DecompositionBaseLog(23),
-            pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
-            cbs_level: DecompositionLevelCount(0),
-            cbs_base_log: DecompositionBaseLog(0),
             message_modulus: MessageModulus(32),
             carry_modulus: CarryModulus(1),
+            ..PARAM_MESSAGE_2_CARRY_3
         };
         let initial_modulus = MessageModulus(64);
         let initial_params = Parameters {
@@ -902,7 +885,10 @@ mod test {
             server.lower_precision(&mut ct);
             let expected = m / ratio;
             let actual = client.key.decrypt(&ct);
-            println!("m={m}, actual={actual}, expected={expected}, noise={:.2}", client.lwe_noise(&ct, expected));
+            println!(
+                "m={m}, actual={actual}, expected={expected}, noise={:.2}",
+                client.lwe_noise(&ct, expected)
+            );
             assert_eq!(actual, expected);
         }
     }
