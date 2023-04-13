@@ -20,3 +20,4 @@ tfhe = { git = "https://github.com/kc1212/tfhe-rs", branch = "expose-sk", featur
 [dev-dependencies]
 quickcheck = "1"
 quickcheck_macros = "1"
+rand = "0.8"
