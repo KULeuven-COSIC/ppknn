@@ -5,7 +5,7 @@ pub mod keyswitch;
 pub use batcher::*;
 pub use comparator::*;
 
-use dyn_stack::{DynStack, ReborrowMut};
+use dyn_stack::{mem::GlobalMemBuffer, DynStack, ReborrowMut};
 use std::fs;
 use std::io::Cursor;
 use tfhe::core_crypto::fft_impl::c64;
@@ -61,11 +61,11 @@ pub fn gen_glwe_sk(
 }
 
 pub fn parse_csv(path: &std::path::Path) -> (Vec<Vec<u64>>, Vec<u64>) {
-    let fhandle = fs::File::open(path).expect("csv file not found, consider using --artificial");
+    let f_handle = fs::File::open(path).expect("csv file not found, consider using --artificial");
 
     let mut model_vec: Vec<Vec<u64>> = vec![];
     let mut class: Vec<u64> = vec![];
-    let mut reader = csv::Reader::from_reader(fhandle);
+    let mut reader = csv::Reader::from_reader(f_handle);
     for res in reader.records() {
         let record = res.unwrap();
         let mut row: Vec<_> = record.iter().map(|s| s.parse().unwrap()).collect();
@@ -105,18 +105,42 @@ pub struct KnnServer {
     labels: Vec<Ciphertext>, // trivially encrypted labels
 }
 
+pub(crate) fn setup_polymul_fft(params: Parameters) -> (Fft, GlobalMemBuffer) {
+    let fft = Fft::new(params.polynomial_size);
+    let fft_view = fft.as_view();
+
+    let mem = GlobalMemBuffer::new(
+        fft_view
+            .forward_scratch()
+            .unwrap()
+            .and(fft_view.backward_scratch().unwrap()),
+    );
+    (fft, mem)
+}
+
 impl KnnServer {
     pub fn compute_distances(
         &self,
         c: &GlweCiphertextOwned<u64>,
         c2: &Ciphertext,
     ) -> Vec<Ciphertext> {
+        let (fft, mut mem) = setup_polymul_fft(self.params);
+        let mut stack = DynStack::new(&mut mem);
+        self.compute_distances_with_fft(c, c2, fft.as_view(), &mut stack)
+    }
+
+    pub fn compute_distances_with_fft(
+        &self,
+        c: &GlweCiphertextOwned<u64>,
+        c2: &Ciphertext,
+        fft: FftView,
+        stack: &mut DynStack,
+    ) -> Vec<Ciphertext> {
         let delta = self.dist_delta;
         let mut distances: Vec<_> = self
             .data
             .iter()
             .map(|m| {
-                // TODO convert to fft for mul?
                 let mut glwe = c.clone();
                 // we want to compute c^2 - 2 * m * c + m^2
                 // first compute 2*m*c where c is a RLWE
@@ -124,18 +148,20 @@ impl KnnServer {
                     .as_mut_polynomial_list()
                     .iter_mut()
                     .for_each(|mut mask| {
-                        // polynomial_wrapping_mul(
-                        polynomial_karatsuba_wrapping_mul(
+                        polynomial_fft_wrapping_mul(
                             &mut mask,
                             &c.get_mask().as_polynomial_list().get(0),
                             &m.as_polynomial(),
+                            fft,
+                            stack,
                         );
                     });
-                // polynomial_wrapping_mul(
-                polynomial_karatsuba_wrapping_mul(
+                polynomial_fft_wrapping_mul(
                     &mut glwe.get_mut_body().as_mut_polynomial(),
                     &c.get_body().as_polynomial(),
                     &m.as_polynomial(),
+                    fft,
+                    stack,
                 );
                 slice_wrapping_scalar_mul_assign(
                     &mut glwe.as_mut(),
@@ -223,7 +249,18 @@ impl KnnServer {
         glwe: &GlweCiphertextOwned<u64>,
         poly: &PolynomialOwned<u64>,
     ) -> GlweCiphertextOwned<u64> {
-        // TODO consider using fft
+        let (fft, mut mem) = setup_polymul_fft(self.params);
+        let mut stack = DynStack::new(&mut mem);
+        self.polynomial_glwe_mul_with_fft(glwe, poly, fft.as_view(), &mut stack)
+    }
+
+    pub(crate) fn polynomial_glwe_mul_with_fft(
+        &self,
+        glwe: &GlweCiphertextOwned<u64>,
+        poly: &PolynomialOwned<u64>,
+        fft: FftView,
+        stack: &mut DynStack,
+    ) -> GlweCiphertextOwned<u64> {
         let mut out = GlweCiphertextOwned::new(
             0u64,
             self.params.glwe_dimension.to_glwe_size(),
@@ -233,17 +270,20 @@ impl KnnServer {
             .as_mut_polynomial_list()
             .iter_mut()
             .for_each(|mut mask| {
-                polynomial_wrapping_mul(
+                polynomial_fft_wrapping_mul(
                     &mut mask,
                     &glwe.get_mask().as_polynomial_list().get(0),
                     &poly,
+                    fft,
+                    stack,
                 );
             });
-        // polynomial_wrapping_mul(
-        polynomial_karatsuba_wrapping_mul(
+        polynomial_fft_wrapping_mul(
             &mut out.get_mut_body().as_mut_polynomial(),
             &glwe.get_body().as_polynomial(),
             &poly,
+            fft,
+            stack,
         );
         out
     }
@@ -670,7 +710,6 @@ pub fn polynomial_fft_wrapping_mul<Scalar, OutputCont, LhsCont, RhsCont>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use dyn_stack::mem::GlobalMemBuffer;
 
     pub(crate) const TEST_PARAM: Parameters = Parameters {
         lwe_dimension: LweDimension(742),
