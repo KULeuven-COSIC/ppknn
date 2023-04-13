@@ -5,8 +5,12 @@ pub mod keyswitch;
 pub use batcher::*;
 pub use comparator::*;
 
+use dyn_stack::{DynStack, ReborrowMut};
 use std::fs;
 use std::io::Cursor;
+use tfhe::core_crypto::fft_impl::c64;
+use tfhe::core_crypto::fft_impl::math::fft::FftView;
+use tfhe::core_crypto::fft_impl::math::polynomial::FourierPolynomial;
 use tfhe::core_crypto::prelude::polynomial_algorithms::*;
 use tfhe::core_crypto::prelude::slice_algorithms::*;
 use tfhe::core_crypto::prelude::*;
@@ -619,12 +623,54 @@ pub fn setup_with_data(
     (client, server)
 }
 
+pub fn polynomial_fft_wrapping_mul<Scalar, OutputCont, LhsCont, RhsCont>(
+    output: &mut Polynomial<OutputCont>,
+    lhs: &Polynomial<LhsCont>,
+    rhs: &Polynomial<RhsCont>,
+    fft: FftView,
+    stack: &mut DynStack,
+) where
+    Scalar: UnsignedTorus,
+    OutputCont: ContainerMut<Element = Scalar>,
+    LhsCont: Container<Element = Scalar>,
+    RhsCont: Container<Element = Scalar>,
+{
+    assert_eq!(lhs.polynomial_size(), rhs.polynomial_size());
+    let n = lhs.polynomial_size().0;
+
+    let mut fourier_lhs = FourierPolynomial {
+        data: vec![c64::default(); n / 2],
+    };
+    let mut fourier_rhs = FourierPolynomial {
+        data: vec![c64::default(); n / 2],
+    };
+
+    fft.forward_as_torus(
+        unsafe { fourier_lhs.as_mut_view().into_uninit() },
+        lhs.as_view(),
+        stack.rb_mut(),
+    );
+    fft.forward_as_integer(
+        unsafe { fourier_rhs.as_mut_view().into_uninit() },
+        rhs.as_view(),
+        stack.rb_mut(),
+    );
+
+    for (a, b) in fourier_lhs.data.iter_mut().zip(fourier_rhs.data.iter()) {
+        *a *= *b;
+    }
+
+    fft.backward_as_torus(
+        unsafe { output.as_mut_view().into_uninit() },
+        fourier_lhs.as_view(),
+        stack.rb_mut(),
+    );
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use dyn_stack::{mem::GlobalMemBuffer, DynStack, ReborrowMut};
-    use tfhe::core_crypto::fft_impl::c64;
-    use tfhe::core_crypto::fft_impl::math::polynomial::FourierPolynomial;
+    use dyn_stack::mem::GlobalMemBuffer;
 
     pub(crate) const TEST_PARAM: Parameters = Parameters {
         lwe_dimension: LweDimension(742),
@@ -906,13 +952,6 @@ mod test {
         let fft = fft.as_view();
         let n = 2048usize;
 
-        let mut fourier1 = FourierPolynomial {
-            data: vec![c64::default(); n / 2],
-        };
-        let mut fourier2 = FourierPolynomial {
-            data: vec![c64::default(); n / 2],
-        };
-
         let mut mem = GlobalMemBuffer::new(
             fft.forward_scratch()
                 .unwrap()
@@ -932,27 +971,9 @@ mod test {
                 .map(|_| rand::random::<u16>() as u64)
                 .collect::<Vec<_>>()
         });
-        fft.forward_as_torus(
-            unsafe { fourier1.as_mut_view().into_uninit() },
-            input1.as_view(),
-            stack.rb_mut(),
-        );
-        fft.forward_as_integer(
-            unsafe { fourier2.as_mut_view().into_uninit() },
-            input2.as_view(),
-            stack.rb_mut(),
-        );
-
-        for (a, b) in fourier1.data.iter_mut().zip(fourier2.data.iter()) {
-            *a *= *b;
-        }
 
         let mut actual = Polynomial::new(0u64, PolynomialSize(n));
-        fft.backward_as_torus(
-            unsafe { actual.as_mut_view().into_uninit() },
-            fourier1.as_view(),
-            stack.rb_mut(),
-        );
+        polynomial_fft_wrapping_mul(&mut actual, &input1, &input2, fft, &mut stack);
 
         let mut expected = Polynomial::new(0u64, PolynomialSize(n));
         polynomial_wrapping_mul(&mut expected, &input1, &input2);
