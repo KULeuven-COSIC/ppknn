@@ -115,14 +115,14 @@ pub fn simulate(
     data: Vec<Vec<u64>>,
     labels: Vec<u64>,
     target: Vec<u64>,
-) -> (Vec<(u64, u64)>, u128) {
+) -> (Vec<(u64, u64)>, u128, u128) {
     let (mut client, server) =
         setup_with_data(params, data, labels, params.message_modulus.0 as u64 * 2);
     let (glwe, lwe) = client.make_query(&target);
-    // setup dummy labels
 
     let server_start = Instant::now();
     let distances_labels = server.compute_distances_with_labels(&glwe, &lwe);
+    let dist_dur = server_start.elapsed().as_millis();
     let mut sorter = BatcherSort::new_k(EncCmp::boxed(distances_labels, params, server), k);
     sorter.sort();
     let server_dur = server_start.elapsed().as_millis();
@@ -132,6 +132,7 @@ pub fn simulate(
             .iter()
             .map(|ct| ct.decrypt(&client.key))
             .collect(),
+        dist_dur,
         server_dur,
     )
 }
@@ -143,10 +144,10 @@ fn main() {
     let target = vec![3, 0, 0, 0u64];
     let labels = vec![0u64; 40];
 
-    let (output, dur) = simulate(PARAMS, k, data, labels, target);
+    let (output, dist_dur, total_dur) = simulate(PARAMS, k, data, labels, target);
     assert_eq!(output.len(), k);
 
-    println!("knn duration: {} ms", dur);
+    println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms");
     for i in 0..k {
         println!("output[{}]={:?}", i, output[i]);
     }
