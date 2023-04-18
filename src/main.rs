@@ -1,6 +1,26 @@
+use clap::Parser;
 use ppknn::*;
 use std::time::Instant;
 use tfhe::shortint::prelude::*;
+
+#[derive(Parser, Debug, Clone)]
+#[clap(author, version, about="Privacy preserving k nearest neighbour", long_about = None)]
+pub struct Cli {
+    #[arg(long, help = "path to the file containing the training/testing set")]
+    pub file_name: String,
+
+    #[arg(long, default_value_t = 100, help = "size of the model")]
+    pub model_size: usize,
+
+    #[arg(long, default_value_t = 10, help = "size of the test")]
+    pub test_size: usize,
+
+    #[arg(long, default_value_t = 3, help = "k in knn")]
+    pub k: usize,
+
+    #[clap(long, help = "print more information")]
+    pub verbose: bool,
+}
 
 #[allow(dead_code)]
 fn test_batcher() {

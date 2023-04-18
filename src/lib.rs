@@ -60,9 +60,8 @@ pub fn gen_glwe_sk(
     glwe_sk
 }
 
-pub fn parse_csv(path: &std::path::Path) -> (Vec<Vec<u64>>, Vec<u64>) {
-    let f_handle = fs::File::open(path).expect("csv file not found, consider using --artificial");
-
+pub fn parse_csv(f_handle: fs::File) -> (Vec<Vec<u64>>, Vec<u64>) {
+    // let f_handle = fs::File::open(path).expect("csv file not found, consider using --artificial");
     let mut model_vec: Vec<Vec<u64>> = vec![];
     let mut class: Vec<u64> = vec![];
     let mut reader = csv::Reader::from_reader(f_handle);
