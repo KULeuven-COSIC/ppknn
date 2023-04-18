@@ -1,6 +1,30 @@
 use crate::KnnServer;
-use std::cmp::Ord;
+use std::cmp::{Ord, Ordering};
 use tfhe::shortint::prelude::*;
+
+#[derive(Eq, Debug, Copy, Clone)]
+pub struct ClearItem {
+    pub value: u64,
+    pub class: u64,
+}
+
+impl Ord for ClearItem {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl PartialOrd for ClearItem {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.value.cmp(&other.value))
+    }
+}
+
+impl PartialEq for ClearItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
 
 pub trait Cmp {
     type Item;

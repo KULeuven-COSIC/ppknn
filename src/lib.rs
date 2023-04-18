@@ -895,14 +895,14 @@ mod test {
     fn test_enc_sort() {
         {
             let (client, server) = setup(TEST_PARAM);
-            let pt_vec = vec![(1, 1), (0, 0), (2, 2), (3u64, 3u64)];
+            let pt_vec = vec![(1, 0), (0, 1), (2, 2), (3u64, 3u64)];
             let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
             let actual = sorter.inner()[0].decrypt(&client.key);
-            let expected = (0u64, 0u64);
+            let expected = (0u64, 1u64);
             assert_eq!(actual, expected);
 
             let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
@@ -910,14 +910,14 @@ mod test {
         }
         {
             let (client, server) = setup(TEST_PARAM);
-            let pt_vec = vec![(2, 2), (2, 2), (1, 1), (3u64, 3u64)];
+            let pt_vec = vec![(2, 0), (2, 1), (1, 2), (3u64, 3u64)];
             let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
             let actual = sorter.inner()[0].decrypt(&client.key);
-            let expected = (1u64, 1u64);
+            let expected = (1u64, 2u64);
             assert_eq!(actual, expected);
 
             let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
@@ -925,14 +925,14 @@ mod test {
         }
         {
             let (client, server) = setup(TEST_PARAM);
-            let pt_vec = vec![(1, 1), (2, 2), (3u64, 3u64), (0, 0)];
+            let pt_vec = vec![(1, 0), (2, 1), (3u64, 2u64), (0, 3)];
             let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
 
             let actual = sorter.inner()[0].decrypt(&client.key);
-            let expected = (0u64, 0u64);
+            let expected = (0u64, 3u64);
             assert_eq!(actual, expected);
 
             let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);

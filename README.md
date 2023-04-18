@@ -8,7 +8,7 @@ cargo test --release # might take a few minutes
 
 ## Running
 ```
-./target/release/ppknn --file-name data/dummy.csv --model-size 40 --test-size 3 -k 3
+./target/release/ppknn --file-name data/dummy.csv --model-size 40 --test-size 4 -k 3
 ```
 
 ## Internals

@@ -134,15 +134,47 @@ const PARAMS: Parameters = Parameters {
     carry_modulus: CarryModulus(1),
 };
 
-pub fn simulate(
+fn squared_distance(xs: &[u64], ys: &[u64]) -> u64 {
+    xs.iter()
+        .zip(ys)
+        .map(|(x, y)| {
+            let out = if x > y { x - y } else { y - x };
+            out * out
+        })
+        .sum()
+}
+
+fn compute_distances(data: &[Vec<u64>], target: &[u64]) -> Vec<u64> {
+    data.iter().map(|x| squared_distance(x, target)).collect()
+}
+
+fn clear_knn(k: usize, model_vec: &[Vec<u64>], labels: &[u64], target: &[u64]) -> Vec<ClearItem> {
+    let distances: Vec<_> = compute_distances(model_vec, target)
+        .iter()
+        .zip(labels.iter())
+        .map(|(value, class)| ClearItem {
+            value: *value,
+            class: *class,
+        })
+        .collect();
+    let mut batcher = BatcherSort::new_k(ClearCmp::boxed(distances), k);
+    batcher.sort();
+    batcher.inner()[0..k].to_vec()
+}
+
+fn simulate(
     params: Parameters,
     k: usize,
-    data: &[Vec<u64>],
+    model_vec: &[Vec<u64>],
     labels: &[u64],
     target: &[u64],
 ) -> (Vec<(u64, u64)>, u128, u128) {
-    let (mut client, server) =
-        setup_with_data(params, data, labels, params.message_modulus.0 as u64 * 2);
+    let (mut client, server) = setup_with_data(
+        params,
+        model_vec,
+        labels,
+        params.message_modulus.0 as u64 * 2,
+    );
     let (glwe, lwe) = client.make_query(target);
 
     let server_start = Instant::now();
@@ -165,8 +197,7 @@ pub fn simulate(
 fn main() {
     // test_batcher();
     let cli = Cli::parse();
-    let f_handle =
-        fs::File::open(cli.file_name).expect("csv file not found");
+    let f_handle = fs::File::open(cli.file_name).expect("csv file not found");
     let (model_vec, model_labels, test_vec, test_labels) =
         parse_csv(f_handle, cli.model_size, cli.test_size);
 
@@ -179,5 +210,10 @@ fn main() {
             println!("\toutput[{i}]={out:?}");
         }
         println!("\texpected={expected_label}");
+
+        if cli.verbose {
+            let clear_result = clear_knn(cli.k, &model_vec, &model_labels, &target);
+            println!("\tclear_result={clear_result:?}");
+        }
     }
 }
