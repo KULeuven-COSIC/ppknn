@@ -166,7 +166,7 @@ fn main() {
     // test_batcher();
     let cli = Cli::parse();
     let f_handle =
-        fs::File::open(cli.file_name).expect("csv file not found, consider using --artificial");
+        fs::File::open(cli.file_name).expect("csv file not found");
     let (model_vec, model_labels, test_vec, test_labels) =
         parse_csv(f_handle, cli.model_size, cli.test_size);
 
