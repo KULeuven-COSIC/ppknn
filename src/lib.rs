@@ -60,20 +60,38 @@ pub fn gen_glwe_sk(
     glwe_sk
 }
 
-pub fn parse_csv(f_handle: fs::File) -> (Vec<Vec<u64>>, Vec<u64>) {
-    // let f_handle = fs::File::open(path).expect("csv file not found, consider using --artificial");
+pub fn parse_csv(
+    f_handle: fs::File,
+    model_size: usize,
+    test_size: usize,
+) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>) {
     let mut model_vec: Vec<Vec<u64>> = vec![];
-    let mut class: Vec<u64> = vec![];
-    let mut reader = csv::Reader::from_reader(f_handle);
-    for res in reader.records() {
+    let mut test_vec: Vec<Vec<u64>> = vec![];
+    let mut model_labels: Vec<u64> = vec![];
+    let mut test_labels: Vec<u64> = vec![];
+
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(f_handle);
+    for (i, res) in reader.records().enumerate() {
         let record = res.unwrap();
         let mut row: Vec<_> = record.iter().map(|s| s.parse().unwrap()).collect();
         let last = row.pop().unwrap();
-        model_vec.push(row);
-        class.push(last);
+
+        if i < model_size {
+            model_vec.push(row);
+            model_labels.push(last);
+        } else if i >= model_size && i < model_size + test_size {
+            test_vec.push(row);
+            test_labels.push(last);
+        } else {
+            break;
+        }
     }
 
-    (model_vec, class)
+    assert_eq!(model_vec.len(), model_size);
+    assert_eq!(test_vec.len(), test_size);
+    (model_vec, model_labels, test_vec, test_labels)
 }
 
 pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
@@ -476,16 +494,17 @@ impl KnnServer {
         slice_wrapping_add_assign(&mut lhs.ct.as_mut(), &rhs.ct.as_ref())
     }
 
-    pub fn set_data(&mut self, data: Vec<Vec<u64>>) {
+    pub fn set_data(&mut self, data: &[Vec<u64>]) {
         let gamma = data.iter().fold(0usize, |acc, x| acc.max(x.len()));
         let padding = vec![0u64; self.params.polynomial_size.0 - gamma];
         let data: Vec<_> = data
-            .into_iter()
-            .map(|mut v| {
+            .iter()
+            .map(|v| {
                 PlaintextList::from_container({
-                    v.reverse();
-                    v.extend_from_slice(&padding);
-                    v
+                    let mut v_cloned = v.clone();
+                    v_cloned.reverse();
+                    v_cloned.extend_from_slice(&padding);
+                    v_cloned
                 })
             })
             .collect();
@@ -494,10 +513,10 @@ impl KnnServer {
         self.data = data;
     }
 
-    pub fn set_labels(&mut self, labels: Vec<u64>) {
+    pub fn set_labels(&mut self, labels: &[u64]) {
         self.labels = labels
-            .into_iter()
-            .map(|l| self.trivially_encrypt_with_delta(l, self.dist_delta))
+            .iter()
+            .map(|l| self.trivially_encrypt_with_delta(*l, self.dist_delta))
             .collect::<Vec<_>>();
     }
 }
@@ -652,8 +671,8 @@ pub fn setup_with_modulus(params: Parameters, dist_modulus: u64) -> (KnnClient, 
 // The data should not be encoded
 pub fn setup_with_data(
     params: Parameters,
-    data: Vec<Vec<u64>>,
-    labels: Vec<u64>,
+    data: &[Vec<u64>],
+    labels: &[u64],
     dist_modulus: u64,
 ) -> (KnnClient, KnnServer) {
     let (client, mut server) = setup_with_modulus(params, dist_modulus);
@@ -928,7 +947,7 @@ mod test {
             // distance should be 2^2 + 1 = 5
             let data = vec![vec![0, 1, 0, 0u64]];
             let target = vec![2, 0, 0, 0u64];
-            server.set_data(data);
+            server.set_data(&data);
             let (glwe, lwe) = client.make_query(&target);
             let distances = server.compute_distances(&glwe, &lwe);
 
@@ -939,7 +958,7 @@ mod test {
             // distance should be 2^2 = 4
             let data = vec![vec![0, 0, 1, 3u64]];
             let target = vec![0, 0, 1, 1u64];
-            server.set_data(data);
+            server.set_data(&data);
             let (glwe, lwe) = client.make_query(&target);
             let distances = server.compute_distances(&glwe, &lwe);
 

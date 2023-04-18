@@ -1,12 +1,17 @@
 use clap::Parser;
 use ppknn::*;
+use std::fs;
 use std::time::Instant;
 use tfhe::shortint::prelude::*;
 
 #[derive(Parser, Debug, Clone)]
 #[clap(author, version, about="Privacy preserving k nearest neighbour", long_about = None)]
 pub struct Cli {
-    #[arg(long, help = "path to the file containing the training/testing set")]
+    #[arg(
+        long,
+        help = "path to the file containing the training/testing set",
+        required = true
+    )]
     pub file_name: String,
 
     #[arg(long, default_value_t = 100, help = "size of the model")]
@@ -15,7 +20,7 @@ pub struct Cli {
     #[arg(long, default_value_t = 10, help = "size of the test")]
     pub test_size: usize,
 
-    #[arg(long, default_value_t = 3, help = "k in knn")]
+    #[arg(short, default_value_t = 3, help = "k in knn")]
     pub k: usize,
 
     #[clap(long, help = "print more information")]
@@ -132,13 +137,13 @@ const PARAMS: Parameters = Parameters {
 pub fn simulate(
     params: Parameters,
     k: usize,
-    data: Vec<Vec<u64>>,
-    labels: Vec<u64>,
-    target: Vec<u64>,
+    data: &[Vec<u64>],
+    labels: &[u64],
+    target: &[u64],
 ) -> (Vec<(u64, u64)>, u128, u128) {
     let (mut client, server) =
         setup_with_data(params, data, labels, params.message_modulus.0 as u64 * 2);
-    let (glwe, lwe) = client.make_query(&target);
+    let (glwe, lwe) = client.make_query(target);
 
     let server_start = Instant::now();
     let distances_labels = server.compute_distances_with_labels(&glwe, &lwe);
@@ -159,16 +164,20 @@ pub fn simulate(
 
 fn main() {
     // test_batcher();
-    let k = 3usize;
-    let data = vec![vec![0, 7, 0, 0u64]; 40];
-    let target = vec![3, 0, 0, 0u64];
-    let labels = vec![0u64; 40];
+    let cli = Cli::parse();
+    let f_handle =
+        fs::File::open(cli.file_name).expect("csv file not found, consider using --artificial");
+    let (model_vec, model_labels, test_vec, test_labels) =
+        parse_csv(f_handle, cli.model_size, cli.test_size);
 
-    let (output, dist_dur, total_dur) = simulate(PARAMS, k, data, labels, target);
-    assert_eq!(output.len(), k);
-
-    println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms");
-    for i in 0..k {
-        println!("output[{}]={:?}", i, output[i]);
+    for (target, expected_label) in test_vec.into_iter().zip(test_labels) {
+        let (output, dist_dur, total_dur) =
+            simulate(PARAMS, cli.k, &model_vec, &model_labels, &target);
+        assert_eq!(output.len(), cli.k);
+        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms");
+        for (i, out) in output.into_iter().enumerate() {
+            println!("\toutput[{i}]={out:?}");
+        }
+        println!("\texpected={expected_label}");
     }
 }
