@@ -525,6 +525,7 @@ pub struct KnnClient {
     pub key: ClientKey,
     pub params: Parameters,
     pub encryption_rng: EncryptionRandomGenerator<ActivatedRandomGenerator>,
+    pub dist_delta: u64,
 }
 
 impl KnnClient {
@@ -569,7 +570,7 @@ impl KnnClient {
         let gamma = target.len();
         let n = self.params.polynomial_size.0;
         let padding = vec![0u64; n - gamma];
-        let delta = self.delta();
+        let delta = self.dist_delta;
         assert!(gamma < n);
 
         // \sum_{i=0}^{\gamma - 1} c_i * X^i
@@ -655,6 +656,7 @@ pub fn setup_with_modulus(params: Parameters, dist_modulus: u64) -> (KnnClient, 
             key: client_key,
             params,
             encryption_rng,
+            dist_delta,
         },
         KnnServer {
             key: server_key,

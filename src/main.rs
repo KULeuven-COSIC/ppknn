@@ -23,7 +23,14 @@ pub struct Cli {
     #[arg(short, default_value_t = 3, help = "k in knn")]
     pub k: usize,
 
-    #[clap(long, help = "print more information")]
+    #[clap(
+        long,
+        default_value_t = false,
+        help = "compute the distance with high precision"
+    )]
+    pub high_precision: bool,
+
+    #[clap(long, default_value_t = false, help = "print more information")]
     pub verbose: bool,
 }
 
@@ -168,12 +175,17 @@ fn simulate(
     model_vec: &[Vec<u64>],
     labels: &[u64],
     target: &[u64],
+    high_precision: bool,
 ) -> (Vec<(u64, u64)>, u128, u128) {
     let (mut client, server) = setup_with_data(
         params,
         model_vec,
         labels,
-        params.message_modulus.0 as u64 * 2,
+        if high_precision {
+            params.message_modulus.0 as u64 * 2
+        } else {
+            params.message_modulus.0 as u64
+        },
     );
     let (glwe, lwe) = client.make_query(target);
 
@@ -202,8 +214,14 @@ fn main() {
         parse_csv(f_handle, cli.model_size, cli.test_size);
 
     for (target, expected_label) in test_vec.into_iter().zip(test_labels) {
-        let (output, dist_dur, total_dur) =
-            simulate(PARAMS, cli.k, &model_vec, &model_labels, &target);
+        let (output, dist_dur, total_dur) = simulate(
+            PARAMS,
+            cli.k,
+            &model_vec,
+            &model_labels,
+            &target,
+            cli.high_precision,
+        );
         assert_eq!(output.len(), cli.k);
         println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms");
         for (i, out) in output.into_iter().enumerate() {
