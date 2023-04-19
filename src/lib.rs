@@ -732,6 +732,8 @@ pub fn polynomial_fft_wrapping_mul<Scalar, OutputCont, LhsCont, RhsCont>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     pub(crate) const TEST_PARAM: Parameters = Parameters {
         lwe_dimension: LweDimension(742),
@@ -897,10 +899,11 @@ mod test {
 
     #[test]
     fn test_enc_sort() {
+        let (client, server) = setup(TEST_PARAM);
+        let server = Rc::new(RefCell::new(server));
         {
-            let (client, server) = setup(TEST_PARAM);
             let pt_vec = vec![(1, 0), (0, 1), (2, 2), (3u64, 3u64)];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
+            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server.clone());
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
@@ -913,9 +916,8 @@ mod test {
             println!("noise={}", noise);
         }
         {
-            let (client, server) = setup(TEST_PARAM);
             let pt_vec = vec![(2, 0), (2, 1), (1, 2), (3u64, 3u64)];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
+            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server.clone());
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();
@@ -928,9 +930,8 @@ mod test {
             println!("noise={}", noise);
         }
         {
-            let (client, server) = setup(TEST_PARAM);
             let pt_vec = vec![(1, 0), (2, 1), (3u64, 2u64), (0, 3)];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server);
+            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server.clone());
 
             let mut sorter = BatcherSort::new_k(enc_cmp, 1);
             sorter.sort();

@@ -1,4 +1,4 @@
-use crate::comparator::Cmp;
+use crate::comparator::Comparator;
 use std::cmp;
 use std::collections::HashMap;
 
@@ -17,13 +17,13 @@ fn build_local_index_map(ix: &[usize], jx: &[usize]) -> HashMap<usize, usize> {
 }
 
 pub struct BatcherSort<T> {
-    pub vs: Box<dyn Cmp<Item = T>>,
+    pub vs: Box<dyn Comparator<Item = T>>,
     k: usize,
     verbose: bool,
 }
 
 impl<T> BatcherSort<T> {
-    pub fn new(vs: Box<dyn Cmp<Item = T>>) -> Self {
+    pub fn new(vs: Box<dyn Comparator<Item = T>>) -> Self {
         let k = vs.len();
         Self {
             vs,
@@ -32,7 +32,7 @@ impl<T> BatcherSort<T> {
         }
     }
 
-    pub fn new_k(vs: Box<dyn Cmp<Item = T>>, k: usize) -> Self {
+    pub fn new_k(vs: Box<dyn Comparator<Item = T>>, k: usize) -> Self {
         let k = k.min(vs.len());
         Self {
             vs,

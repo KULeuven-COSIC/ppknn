@@ -1,7 +1,9 @@
 use clap::Parser;
 use ppknn::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
+use std::rc::Rc;
 use std::time::Instant;
 use tfhe::shortint::prelude::*;
 
@@ -170,16 +172,13 @@ fn clear_knn(k: usize, model_vec: &[Vec<u64>], labels: &[u64], target: &[u64]) -
     batcher.inner()[0..k].to_vec()
 }
 
-fn simulate(
+fn setup_simulation(
     params: Parameters,
-    k: usize,
     model_vec: &[Vec<u64>],
     labels: &[u64],
-    target: &[u64],
     high_precision: bool,
-    verbose: bool,
-) -> (Vec<(u64, u64)>, u128, u128) {
-    let (mut client, server) = setup_with_data(
+) -> (KnnClient, Rc<RefCell<KnnServer>>) {
+    let (client, server) = setup_with_data(
         params,
         model_vec,
         labels,
@@ -189,10 +188,22 @@ fn simulate(
             params.message_modulus.0 as u64
         },
     );
+    let server = Rc::new(RefCell::new(server));
+    (client, server)
+}
+
+fn simulate(
+    params: Parameters,
+    client: &mut KnnClient,
+    server: Rc<RefCell<KnnServer>>,
+    k: usize,
+    target: &[u64],
+    verbose: bool,
+) -> (Vec<(u64, u64)>, u128, u128) {
     let (glwe, lwe) = client.make_query(target);
 
     let server_start = Instant::now();
-    let distances_labels = server.compute_distances_with_labels(&glwe, &lwe);
+    let distances_labels = server.borrow().compute_distances_with_labels(&glwe, &lwe);
 
     if verbose {
         let distances: Vec<_> = distances_labels
@@ -243,17 +254,18 @@ fn main() {
     let (model_vec, model_labels, test_vec, test_labels) =
         parse_csv(f_handle, cli.model_size, cli.test_size);
 
+    let (mut client, server) =
+        setup_simulation(PARAMS, &model_vec, &model_labels, cli.high_precision);
     for (i, (target, expected_label)) in test_vec.into_iter().zip(test_labels).enumerate() {
         if cli.verbose {
             println!("[DEBUG] target_no={i}");
         }
         let (output, dist_dur, total_dur) = simulate(
             PARAMS,
+            &mut client,
+            server.clone(),
             cli.k,
-            &model_vec,
-            &model_labels,
             &target,
-            cli.high_precision,
             cli.verbose,
         );
         let output_labels: Vec<_> = output.iter().map(|(_, b)| *b).collect();
