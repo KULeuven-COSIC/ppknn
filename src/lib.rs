@@ -514,9 +514,11 @@ impl KnnServer {
     }
 
     pub fn set_labels(&mut self, labels: &[u64]) {
+        // we do not lower the precision of the labels, so use the "after" delta
+        let delta = self.delta();
         self.labels = labels
             .iter()
-            .map(|l| self.trivially_encrypt_with_delta(*l, self.dist_delta))
+            .map(|l| self.trivially_encrypt_with_delta(*l, delta))
             .collect::<Vec<_>>();
     }
 }

@@ -1,8 +1,9 @@
 use crate::KnnServer;
 use std::cmp::{Ord, Ordering};
+use std::fmt;
 use tfhe::shortint::prelude::*;
 
-#[derive(Eq, Debug, Copy, Clone)]
+#[derive(Eq, Copy, Clone)]
 pub struct ClearItem {
     pub value: u64,
     pub class: u64,
@@ -23,6 +24,12 @@ impl PartialOrd for ClearItem {
 impl PartialEq for ClearItem {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
+    }
+}
+
+impl fmt::Debug for ClearItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({}, {})", self.value, self.class)
     }
 }
 

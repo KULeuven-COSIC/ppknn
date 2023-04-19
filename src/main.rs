@@ -1,5 +1,6 @@
 use clap::Parser;
 use ppknn::*;
+use std::collections::HashMap;
 use std::fs;
 use std::time::Instant;
 use tfhe::shortint::prelude::*;
@@ -30,7 +31,7 @@ pub struct Cli {
     )]
     pub high_precision: bool,
 
-    #[clap(long, default_value_t = false, help = "print more information")]
+    #[clap(short, long, default_value_t = false, help = "print more information")]
     pub verbose: bool,
 }
 
@@ -176,6 +177,7 @@ fn simulate(
     labels: &[u64],
     target: &[u64],
     high_precision: bool,
+    verbose: bool,
 ) -> (Vec<(u64, u64)>, u128, u128) {
     let (mut client, server) = setup_with_data(
         params,
@@ -191,6 +193,20 @@ fn simulate(
 
     let server_start = Instant::now();
     let distances_labels = server.compute_distances_with_labels(&glwe, &lwe);
+
+    if verbose {
+        let distances: Vec<_> = distances_labels
+            .iter()
+            .take(10)
+            .map(|item| {
+                let value = client.key.decrypt(&item.value);
+                let class = client.key.decrypt(&item.class);
+                (value, class)
+            })
+            .collect();
+        println!("[DEBUG] decrypted_distances_top10={distances:?}");
+    }
+
     let dist_dur = server_start.elapsed().as_millis();
     let mut sorter = BatcherSort::new_k(EncCmp::boxed(distances_labels, params, server), k);
     sorter.sort();
@@ -206,6 +222,20 @@ fn simulate(
     )
 }
 
+fn majority(vs: &[u64]) -> u64 {
+    assert!(vs.len() > 0);
+    let max = vs
+        .iter()
+        .fold(HashMap::<u64, usize>::new(), |mut m, x| {
+            *m.entry(*x).or_default() += 1;
+            m
+        })
+        .into_iter()
+        .max_by_key(|(_, v)| *v)
+        .map(|(k, _)| k);
+    max.unwrap()
+}
+
 fn main() {
     // test_batcher();
     let cli = Cli::parse();
@@ -213,7 +243,10 @@ fn main() {
     let (model_vec, model_labels, test_vec, test_labels) =
         parse_csv(f_handle, cli.model_size, cli.test_size);
 
-    for (target, expected_label) in test_vec.into_iter().zip(test_labels) {
+    for (i, (target, expected_label)) in test_vec.into_iter().zip(test_labels).enumerate() {
+        if cli.verbose {
+            println!("[DEBUG] target_no={i}");
+        }
         let (output, dist_dur, total_dur) = simulate(
             PARAMS,
             cli.k,
@@ -221,17 +254,17 @@ fn main() {
             &model_labels,
             &target,
             cli.high_precision,
+            cli.verbose,
         );
+        let output_labels: Vec<_> = output.iter().map(|(_, b)| *b).collect();
+        let actual_label = majority(&output_labels);
         assert_eq!(output.len(), cli.k);
-        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms");
-        for (i, out) in output.into_iter().enumerate() {
-            println!("\toutput[{i}]={out:?}");
-        }
-        println!("\texpected={expected_label}");
+        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, actual_label={actual_label}, expected_label={expected_label}");
 
         if cli.verbose {
             let clear_result = clear_knn(cli.k, &model_vec, &model_labels, &target);
-            println!("\tclear_result={clear_result:?}");
+            println!("[DEBUG] actual_full={output:?}");
+            println!("[DEBUG] expected_full={clear_result:?}");
         }
     }
 }

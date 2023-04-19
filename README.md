@@ -7,9 +7,14 @@ cargo test --release # might take a few minutes
 ```
 
 ## Running
+Use `./target/release/ppknn -h` to see the available options.
+An example is shown below.
 ```
 ./target/release/ppknn --file-name data/dummy.csv --model-size 40 --test-size 4 -k 3
 ```
+
+Providing a `.csv` file for the `--file-name` argument is mandatory.
+This file holds the training and testing data.
 
 ## Internals
 
