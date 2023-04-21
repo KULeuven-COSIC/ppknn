@@ -125,16 +125,11 @@ fn test_batcher() {
     }
 }
 
-const SMALL_PARAMS: Parameters = Parameters {
+const PARAMS: Parameters = Parameters {
     message_modulus: MessageModulus(32),
     carry_modulus: CarryModulus(1),
+    // ..PARAM_MESSAGE_2_CARRY_3
     ..PARAM_MESSAGE_1_CARRY_3
-};
-
-const LARGER_PARAMS: Parameters = Parameters {
-    message_modulus: MessageModulus(32),
-    carry_modulus: CarryModulus(1),
-    ..PARAM_MESSAGE_2_CARRY_3
 };
 
 fn squared_distance(xs: &[u64], ys: &[u64]) -> u64 {
@@ -242,7 +237,7 @@ fn majority(vs: &[u64]) -> u64 {
 
 fn main() {
     // test_batcher();
-    let params = LARGER_PARAMS;
+    let params = PARAMS;
     let cli = Cli::parse();
     let f_handle = fs::File::open(cli.file_name).expect("csv file not found");
     let (model_vec, model_labels, test_vec, test_labels) =
@@ -276,6 +271,9 @@ fn main() {
         let actual_label = majority(&output_labels);
         assert_eq!(output.len(), cli.k);
         println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, actual_label={actual_label}, expected_label={expected_label}");
+        if actual_label != expected_label {
+            println!("[WARNING] prediction error");
+        }
 
         if cli.verbose {
             let clear_result = clear_knn(cli.k, &model_vec, &model_labels, &target);
