@@ -125,23 +125,16 @@ fn test_batcher() {
     }
 }
 
-const PARAMS: Parameters = Parameters {
-    lwe_dimension: LweDimension(742),
-    glwe_dimension: GlweDimension(1),
-    polynomial_size: PolynomialSize(2048),
-    lwe_modular_std_dev: StandardDev(0.000007069849454709433),
-    glwe_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
-    pbs_level: DecompositionLevelCount(6),
-    pbs_base_log: DecompositionBaseLog(3),
-    ks_level: DecompositionLevelCount(6),
-    ks_base_log: DecompositionBaseLog(3),
-    pfks_level: DecompositionLevelCount(6),
-    pfks_base_log: DecompositionBaseLog(3),
-    pfks_modular_std_dev: StandardDev(0.00000000000000029403601535432533),
-    cbs_level: DecompositionLevelCount(0),
-    cbs_base_log: DecompositionBaseLog(0),
+const SMALL_PARAMS: Parameters = Parameters {
     message_modulus: MessageModulus(32),
     carry_modulus: CarryModulus(1),
+    ..PARAM_MESSAGE_1_CARRY_3
+};
+
+const LARGER_PARAMS: Parameters = Parameters {
+    message_modulus: MessageModulus(32),
+    carry_modulus: CarryModulus(1),
+    ..PARAM_MESSAGE_2_CARRY_3
 };
 
 fn squared_distance(xs: &[u64], ys: &[u64]) -> u64 {
@@ -249,19 +242,30 @@ fn majority(vs: &[u64]) -> u64 {
 
 fn main() {
     // test_batcher();
+    let params = LARGER_PARAMS;
     let cli = Cli::parse();
     let f_handle = fs::File::open(cli.file_name).expect("csv file not found");
     let (model_vec, model_labels, test_vec, test_labels) =
         parse_csv(f_handle, cli.model_size, cli.test_size);
 
     let (mut client, server) =
-        setup_simulation(PARAMS, &model_vec, &model_labels, cli.high_precision);
+        setup_simulation(params, &model_vec, &model_labels, cli.high_precision);
     for (i, (target, expected_label)) in test_vec.into_iter().zip(test_labels).enumerate() {
         if cli.verbose {
+            let ratio = client.delta() / client.dist_delta;
             println!("[DEBUG] target_no={i}");
+            println!(
+                "[DEBUG] clear_distances_top10={:?}",
+                compute_distances(&model_vec, &target)
+                    .into_iter()
+                    .map(|d| { d / ratio })
+                    .zip(model_labels.clone())
+                    .take(10)
+                    .collect::<Vec<_>>()
+            )
         }
         let (output, dist_dur, total_dur) = simulate(
-            PARAMS,
+            params,
             &mut client,
             server.clone(),
             cli.k,

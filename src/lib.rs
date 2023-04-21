@@ -160,7 +160,7 @@ impl KnnServer {
             .map(|m| {
                 let mut glwe = c.clone();
                 // we want to compute c^2 - 2 * m * c + m^2
-                // first compute 2*m*c where c is a RLWE
+                // first compute m*c where c is a RLWE
                 glwe.get_mut_mask()
                     .as_mut_polynomial_list()
                     .iter_mut()
@@ -180,27 +180,28 @@ impl KnnServer {
                     fft,
                     stack,
                 );
-                slice_wrapping_scalar_mul_assign(
-                    &mut glwe.as_mut(),
-                    self.params.message_modulus.0 as u64 - 2u64,
-                );
-                // slice_wrapping_opposite_assign(&mut glwe.as_mut()); // combine with scalar_mul?
 
                 // sample extract the \gamma -1 th coeff
-                let mut lwe = self.new_ct();
-                extract_lwe_sample_from_glwe_ciphertext(
-                    &glwe,
-                    &mut lwe.ct,
-                    MonomialDegree(self.gamma - 1),
-                );
+                // m_times_c = m*c
+                let m_times_c = {
+                    let mut lwe = self.new_ct();
+                    extract_lwe_sample_from_glwe_ciphertext(
+                        &glwe,
+                        &mut lwe.ct,
+                        MonomialDegree(self.gamma - 1),
+                    );
+                    lwe
+                };
 
-                // add c2 = \sum_{i=0}^{\gamma-1} c_i^2 to -2*m*c
-                lwe_ciphertext_add_assign(&mut lwe.ct, &c2.ct);
+                // c2 = \sum_{i=0}^{\gamma-1} c_i^2
+                // out <- out - m_times_c * 2
+                let mut out = c2.clone();
+                slice_wrapping_sub_scalar_mul_assign(&mut out.ct.as_mut(), &m_times_c.ct.as_ref(), 2);
 
                 // add \sum_{i=0}^{\gamma-1} m_i^2
                 let m2 = Plaintext(delta * m.iter().map(|x| *x.0 * *x.0).sum::<u64>());
-                lwe_ciphertext_plaintext_add_assign(&mut lwe.ct, m2);
-                lwe
+                lwe_ciphertext_plaintext_add_assign(&mut out.ct, m2);
+                out
             })
             .collect();
 
@@ -356,7 +357,7 @@ impl KnnServer {
         }
     }
 
-    fn delta(&self) -> u64 {
+    pub fn delta(&self) -> u64 {
         let delta =
             (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
         delta
@@ -562,7 +563,7 @@ impl KnnClient {
         ((pt.0 as i64).abs() as f64).log2()
     }
 
-    fn delta(&self) -> u64 {
+    pub fn delta(&self) -> u64 {
         let delta =
             (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
         delta
@@ -1005,6 +1006,39 @@ mod test {
                 client.lwe_noise(&ct, expected)
             );
             assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_compute_distance_lower_precision() {
+        let final_params = Parameters {
+            message_modulus: MessageModulus(32),
+            carry_modulus: CarryModulus(1),
+            ..PARAM_MESSAGE_2_CARRY_3
+        };
+        let initial_modulus = MessageModulus(64);
+        let (mut client, mut server) = setup_with_modulus(final_params, initial_modulus.0 as u64);
+        let final_modulus = server.params.message_modulus;
+        let ratio = (initial_modulus.0 / final_modulus.0) as u64;
+
+        for i in 0..8u64 {
+            // 8*8 = 64 (initial_modulus)
+            for j in 0..4 {
+                // we want the maximum to be 7*7 + 3*3 < 64
+                let data = vec![vec![i, 0, 0, 0u64]];
+                let target = vec![0, j, 0, 0u64];
+                server.set_data(&data);
+                let (glwe, lwe) = client.make_query(&target);
+                let distances = server.compute_distances(&glwe, &lwe);
+
+                let expected = (j * j + i * i) / ratio;
+                let actual = client.key.decrypt(&distances[0]);
+                println!(
+                    "i={i}, j={j}, actual={actual}, expected={expected}, noise={:.2}",
+                    client.lwe_noise(&distances[0], expected)
+                );
+                assert_eq!(actual, expected);
+            }
         }
     }
 
