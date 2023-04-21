@@ -28,10 +28,17 @@ pub struct Cli {
 
     #[clap(
         long,
-        default_value_t = false,
-        help = "compute the distance with high precision"
+        default_value_t = 0,
+        help = "compute the distance with higher message modulus"
     )]
-    pub high_precision: bool,
+    pub initial_modulus: u64,
+
+    #[clap(
+        long,
+        default_value_t = false,
+        help = "convert feature values to binary"
+    )]
+    pub binary_features: bool,
 
     #[clap(short, long, default_value_t = false, help = "print more information")]
     pub verbose: bool,
@@ -128,8 +135,7 @@ fn test_batcher() {
 const PARAMS: Parameters = Parameters {
     message_modulus: MessageModulus(32),
     carry_modulus: CarryModulus(1),
-    // ..PARAM_MESSAGE_2_CARRY_3
-    ..PARAM_MESSAGE_1_CARRY_3
+    ..PARAM_MESSAGE_2_CARRY_3 // ..PARAM_MESSAGE_1_CARRY_3
 };
 
 fn squared_distance(xs: &[u64], ys: &[u64]) -> u64 {
@@ -164,16 +170,16 @@ fn setup_simulation(
     params: Parameters,
     model_vec: &[Vec<u64>],
     labels: &[u64],
-    high_precision: bool,
+    initial_modulus: u64,
 ) -> (KnnClient, Rc<RefCell<KnnServer>>) {
     let (client, server) = setup_with_data(
         params,
         model_vec,
         labels,
-        if high_precision {
-            params.message_modulus.0 as u64 * 2
-        } else {
+        if initial_modulus == 0 {
             params.message_modulus.0 as u64
+        } else {
+            initial_modulus
         },
     );
     let server = Rc::new(RefCell::new(server));
@@ -241,10 +247,10 @@ fn main() {
     let cli = Cli::parse();
     let f_handle = fs::File::open(cli.file_name).expect("csv file not found");
     let (model_vec, model_labels, test_vec, test_labels) =
-        parse_csv(f_handle, cli.model_size, cli.test_size);
+        parse_csv(f_handle, cli.model_size, cli.test_size, cli.binary_features);
 
     let (mut client, server) =
-        setup_simulation(params, &model_vec, &model_labels, cli.high_precision);
+        setup_simulation(params, &model_vec, &model_labels, cli.initial_modulus);
     for (i, (target, expected_label)) in test_vec.into_iter().zip(test_labels).enumerate() {
         if cli.verbose {
             let ratio = client.delta() / client.dist_delta;

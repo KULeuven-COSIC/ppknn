@@ -64,6 +64,7 @@ pub fn parse_csv(
     f_handle: fs::File,
     model_size: usize,
     test_size: usize,
+    binary_features: bool,
 ) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>) {
     let mut model_vec: Vec<Vec<u64>> = vec![];
     let mut test_vec: Vec<Vec<u64>> = vec![];
@@ -91,6 +92,23 @@ pub fn parse_csv(
 
     assert_eq!(model_vec.len(), model_size);
     assert_eq!(test_vec.len(), test_size);
+
+    if binary_features {
+        let max_model = model_vec.iter().flatten().max().unwrap();
+        let max_test = test_vec.iter().flatten().max().unwrap();
+        let threshold = max_model.max(max_test) / 2;
+        model_vec.iter_mut().for_each(|xs| {
+            xs.iter_mut().for_each(|x| {
+                *x = if *x < threshold { 0 } else { 1 };
+            })
+        });
+        test_vec.iter_mut().for_each(|xs| {
+            xs.iter_mut().for_each(|x| {
+                *x = if *x < threshold { 0 } else { 1 };
+            })
+        });
+    }
+
     (model_vec, model_labels, test_vec, test_labels)
 }
 
@@ -653,6 +671,8 @@ pub fn setup(params: Parameters) -> (KnnClient, KnnServer) {
 }
 
 pub fn setup_with_modulus(params: Parameters, dist_modulus: u64) -> (KnnClient, KnnServer) {
+    assert!(dist_modulus.is_power_of_two());
+
     let mut seeder = new_seeder();
     let mut encryption_rng =
         EncryptionRandomGenerator::<ActivatedRandomGenerator>::new(seeder.seed(), seeder.as_mut());
