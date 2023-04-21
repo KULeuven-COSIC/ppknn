@@ -196,7 +196,11 @@ impl KnnServer {
                 // c2 = \sum_{i=0}^{\gamma-1} c_i^2
                 // out <- out - m_times_c * 2
                 let mut out = c2.clone();
-                slice_wrapping_sub_scalar_mul_assign(&mut out.ct.as_mut(), &m_times_c.ct.as_ref(), 2);
+                slice_wrapping_sub_scalar_mul_assign(
+                    &mut out.ct.as_mut(),
+                    &m_times_c.ct.as_ref(),
+                    2,
+                );
 
                 // add \sum_{i=0}^{\gamma-1} m_i^2
                 let m2 = Plaintext(delta * m.iter().map(|x| *x.0 * *x.0).sum::<u64>());
@@ -532,9 +536,7 @@ pub struct KnnClient {
 }
 
 impl KnnClient {
-    pub fn lwe_encrypt_with_modulus(&mut self, x: u64, modulus: usize) -> Ciphertext {
-        // we still consider the padding bit
-        let delta = (1u64 << 63) / (modulus * self.params.carry_modulus.0) as u64;
+    pub fn lwe_encrypt_with_delta(&mut self, x: u64, delta: u64) -> Ciphertext {
         let sk = self.key.get_lwe_sk_ref();
         let pt = Plaintext(x * delta);
         let ct = allocate_and_encrypt_new_lwe_ciphertext(
@@ -549,6 +551,12 @@ impl KnnClient {
             message_modulus: self.params.message_modulus,
             carry_modulus: self.params.carry_modulus,
         }
+    }
+
+    pub fn lwe_encrypt_with_modulus(&mut self, x: u64, modulus: usize) -> Ciphertext {
+        // we still consider the padding bit
+        let delta = (1u64 << 63) / (modulus * self.params.carry_modulus.0) as u64;
+        self.lwe_encrypt_with_delta(x, delta)
     }
 
     pub fn lwe_noise(&self, ct: &Ciphertext, expected_pt: u64) -> f64 {
@@ -604,7 +612,7 @@ impl KnnClient {
             self.params.glwe_modular_std_dev,
             &mut self.encryption_rng,
         );
-        let c2 = self.key.encrypt(pt2);
+        let c2 = self.lwe_encrypt_with_delta(pt2, delta);
         (c, c2)
     }
 }
@@ -969,6 +977,24 @@ mod test {
             let distances = server.compute_distances(&glwe, &lwe);
 
             let expected = 4u64;
+            assert_eq!(client.key.decrypt(&distances[0]), expected);
+        }
+        {
+            let data = vec![vec![2, 0, 0, 0u64]];
+            let target = vec![4, 2, 0, 0u64];
+            server.set_data(&data);
+            let (glwe, lwe) = client.make_query(&target);
+            let distances = server.compute_distances(&glwe, &lwe);
+
+            let expected = 8u64;
+            println!(
+                "noise_in_fresh_ct={:?}",
+                client.lwe_noise(&client.key.encrypt(expected), expected)
+            );
+            println!(
+                "noise_in_distance={:?}",
+                client.lwe_noise(&distances[0], expected)
+            );
             assert_eq!(client.key.decrypt(&distances[0]), expected);
         }
     }
