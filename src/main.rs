@@ -35,10 +35,10 @@ pub struct Cli {
 
     #[clap(
         long,
-        default_value_t = false,
-        help = "convert feature values to binary"
+        default_value_t = 0,
+        help = "convert feature values to binary using a threshold"
     )]
-    pub binary_features: bool,
+    pub binary_threshold: u64,
 
     #[clap(short, long, default_value_t = false, help = "print more information")]
     pub verbose: bool,
@@ -138,7 +138,7 @@ const PARAMS: Parameters = Parameters {
     ..PARAM_MESSAGE_2_CARRY_3 // ..PARAM_MESSAGE_1_CARRY_3
 };
 
-fn squared_distance(xs: &[u64], ys: &[u64]) -> u64 {
+fn clear_squared_distance(xs: &[u64], ys: &[u64]) -> u64 {
     xs.iter()
         .zip(ys)
         .map(|(x, y)| {
@@ -148,12 +148,19 @@ fn squared_distance(xs: &[u64], ys: &[u64]) -> u64 {
         .sum()
 }
 
-fn compute_distances(data: &[Vec<u64>], target: &[u64]) -> Vec<u64> {
-    data.iter().map(|x| squared_distance(x, target)).collect()
+fn clear_distances(data: &[Vec<u64>], target: &[u64]) -> Vec<u64> {
+    data.iter()
+        .map(|x| clear_squared_distance(x, target))
+        .collect()
 }
 
-fn clear_knn(k: usize, model_vec: &[Vec<u64>], labels: &[u64], target: &[u64]) -> Vec<ClearItem> {
-    let distances: Vec<_> = compute_distances(model_vec, target)
+fn clear_knn(
+    k: usize,
+    model_vec: &[Vec<u64>],
+    labels: &[u64],
+    target: &[u64],
+) -> (Vec<ClearItem>, u64) {
+    let distances: Vec<_> = clear_distances(model_vec, target)
         .iter()
         .zip(labels.iter())
         .map(|(value, class)| ClearItem {
@@ -161,9 +168,10 @@ fn clear_knn(k: usize, model_vec: &[Vec<u64>], labels: &[u64], target: &[u64]) -
             class: *class,
         })
         .collect();
+    let max_dist = distances.iter().map(|item| item.value).max().unwrap();
     let mut batcher = BatcherSort::new_k(ClearCmp::boxed(distances), k);
     batcher.sort();
-    batcher.inner()[0..k].to_vec()
+    (batcher.inner()[0..k].to_vec(), max_dist)
 }
 
 fn setup_simulation(
@@ -247,7 +255,7 @@ fn main() {
     let cli = Cli::parse();
     let f_handle = fs::File::open(cli.file_name).expect("csv file not found");
     let (model_vec, model_labels, test_vec, test_labels) =
-        parse_csv(f_handle, cli.model_size, cli.test_size, cli.binary_features);
+        parse_csv(f_handle, cli.model_size, cli.test_size, cli.binary_threshold);
 
     let (mut client, server) =
         setup_simulation(params, &model_vec, &model_labels, cli.initial_modulus);
@@ -257,7 +265,7 @@ fn main() {
             println!("[DEBUG] target_no={i}");
             println!(
                 "[DEBUG] clear_distances_top10={:?}",
-                compute_distances(&model_vec, &target)
+                clear_distances(&model_vec, &target)
                     .into_iter()
                     .map(|d| { d / ratio })
                     .zip(model_labels.clone())
@@ -282,7 +290,11 @@ fn main() {
         }
 
         if cli.verbose {
-            let clear_result = clear_knn(cli.k, &model_vec, &model_labels, &target);
+            let (clear_result, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
+            println!(
+                "[DEBUG] max_dist={max_dist}, initial_modulus={}",
+                cli.initial_modulus
+            );
             println!("[DEBUG] actual_full={output:?}");
             println!("[DEBUG] expected_full={clear_result:?}");
         }

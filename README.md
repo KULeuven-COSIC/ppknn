@@ -15,6 +15,7 @@ An example is shown below.
 
 Providing a `.csv` file for the `--file-name` argument is mandatory.
 This file holds the training and testing data.
+The file should not contain values higher than 255.
 
 ## Internals
 

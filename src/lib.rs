@@ -64,7 +64,7 @@ pub fn parse_csv(
     f_handle: fs::File,
     model_size: usize,
     test_size: usize,
-    binary_features: bool,
+    binary_threshold: u64,
 ) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>) {
     let mut model_vec: Vec<Vec<u64>> = vec![];
     let mut test_vec: Vec<Vec<u64>> = vec![];
@@ -93,18 +93,20 @@ pub fn parse_csv(
     assert_eq!(model_vec.len(), model_size);
     assert_eq!(test_vec.len(), test_size);
 
-    if binary_features {
+    if binary_threshold != 0 {
         let max_model = model_vec.iter().flatten().max().unwrap();
+        assert!(*max_model <= u8::MAX as u64);
         let max_test = test_vec.iter().flatten().max().unwrap();
-        let threshold = max_model.max(max_test) / 2;
+        assert!(*max_test <= u8::MAX as u64);
+        // let threshold = max_model.max(max_test) / 2;
         model_vec.iter_mut().for_each(|xs| {
             xs.iter_mut().for_each(|x| {
-                *x = if *x < threshold { 0 } else { 1 };
+                *x = if *x < binary_threshold { 0 } else { 1 };
             })
         });
         test_vec.iter_mut().for_each(|xs| {
             xs.iter_mut().for_each(|x| {
-                *x = if *x < threshold { 0 } else { 1 };
+                *x = if *x < binary_threshold { 0 } else { 1 };
             })
         });
     }
