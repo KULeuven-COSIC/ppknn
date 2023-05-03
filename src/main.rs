@@ -44,94 +44,6 @@ pub struct Cli {
     pub verbose: bool,
 }
 
-#[allow(dead_code)]
-fn test_batcher() {
-    for e in 0..10 {
-        let k = 1 << e;
-        let n = 1 << 10;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 7;
-        let k = 2;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 7;
-        let k = 3;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 10;
-        let k = 2;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 10;
-        let k = 3;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 177;
-        let k = 3;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 10;
-        let k = 5;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.merge();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 177;
-        let k = 5;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 177;
-        let k = 7;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 1239;
-        let k = 3;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 1239;
-        let k = 5;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-    {
-        let n = 1239;
-        let k = 7;
-        let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; n]), k);
-        batcher.sort();
-        println!("n={}, k={}, comparisons={}", n, k, batcher.comparisons());
-    }
-}
-
 const PARAMS: Parameters = Parameters {
     message_modulus: MessageModulus(32),
     carry_modulus: CarryModulus(1),
@@ -201,7 +113,7 @@ fn simulate(
     k: usize,
     target: &[u64],
     verbose: bool,
-) -> (Vec<(u64, u64)>, u128, u128) {
+) -> (Vec<(u64, u64)>, u128, u128, usize) {
     let (glwe, lwe) = client.make_query(target);
 
     let server_start = Instant::now();
@@ -224,6 +136,7 @@ fn simulate(
     let mut sorter = BatcherSort::new_k(EncCmp::boxed(distances_labels, params, server), k);
     sorter.sort();
     let server_dur = server_start.elapsed().as_millis();
+    let comparisons = sorter.comparisons();
 
     (
         sorter.inner()[..k]
@@ -232,6 +145,7 @@ fn simulate(
             .collect(),
         dist_dur,
         server_dur,
+        comparisons,
     )
 }
 
@@ -250,7 +164,6 @@ fn majority(vs: &[u64]) -> u64 {
 }
 
 fn main() {
-    // test_batcher();
     let params = PARAMS;
     let cli = Cli::parse();
     let f_handle = fs::File::open(cli.file_name).expect("csv file not found");
@@ -277,7 +190,7 @@ fn main() {
                     .collect::<Vec<_>>()
             )
         }
-        let (actual_full, dist_dur, total_dur) = simulate(
+        let (actual_full, dist_dur, total_dur, comparisons) = simulate(
             params,
             &mut client,
             server.clone(),
@@ -292,9 +205,9 @@ fn main() {
         let (clear_full, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
         let clear_labels: Vec<_> = clear_full.iter().map(|l| l.class).collect();
         let clear_maj = majority(&clear_labels);
-        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, \
-            actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, all_ok={}, enc_ok={}",
-            actual_maj==clear_maj && clear_maj==expected, actual_maj==expected);
+        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, \
+            actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
+            clear_maj==expected, actual_maj==expected);
 
         if cli.verbose {
             if actual_maj != expected {
