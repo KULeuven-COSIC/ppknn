@@ -254,12 +254,16 @@ fn main() {
     let params = PARAMS;
     let cli = Cli::parse();
     let f_handle = fs::File::open(cli.file_name).expect("csv file not found");
-    let (model_vec, model_labels, test_vec, test_labels) =
-        parse_csv(f_handle, cli.model_size, cli.test_size, cli.binary_threshold);
+    let (model_vec, model_labels, test_vec, test_labels) = parse_csv(
+        f_handle,
+        cli.model_size,
+        cli.test_size,
+        cli.binary_threshold,
+    );
 
     let (mut client, server) =
         setup_simulation(params, &model_vec, &model_labels, cli.initial_modulus);
-    for (i, (target, expected_label)) in test_vec.into_iter().zip(test_labels).enumerate() {
+    for (i, (target, expected)) in test_vec.into_iter().zip(test_labels).enumerate() {
         if cli.verbose {
             let ratio = client.delta() / client.dist_delta;
             println!("[DEBUG] target_no={i}");
@@ -273,7 +277,7 @@ fn main() {
                     .collect::<Vec<_>>()
             )
         }
-        let (output, dist_dur, total_dur) = simulate(
+        let (actual_full, dist_dur, total_dur) = simulate(
             params,
             &mut client,
             server.clone(),
@@ -281,22 +285,27 @@ fn main() {
             &target,
             cli.verbose,
         );
-        let output_labels: Vec<_> = output.iter().map(|(_, b)| *b).collect();
-        let actual_label = majority(&output_labels);
-        assert_eq!(output.len(), cli.k);
-        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, actual_label={actual_label}, expected_label={expected_label}");
-        if actual_label != expected_label {
-            println!("[WARNING] prediction error");
-        }
+        let actual_labels: Vec<_> = actual_full.iter().map(|(_, b)| *b).collect();
+        let actual_maj = majority(&actual_labels);
+        assert_eq!(actual_full.len(), cli.k);
+
+        let (clear_full, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
+        let clear_labels: Vec<_> = clear_full.iter().map(|l| l.class).collect();
+        let clear_maj = majority(&clear_labels);
+        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, \
+            actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, all_ok={}, enc_ok={}",
+            actual_maj==clear_maj && clear_maj==expected, actual_maj==expected);
 
         if cli.verbose {
-            let (clear_result, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
+            if actual_maj != expected {
+                println!("[WARNING] prediction error");
+            }
             println!(
                 "[DEBUG] max_dist={max_dist}, initial_modulus={}",
                 cli.initial_modulus
             );
-            println!("[DEBUG] actual_full={output:?}");
-            println!("[DEBUG] expected_full={clear_result:?}");
+            println!("[DEBUG] actual_full={actual_full:?}");
+            println!("[DEBUG] clear_full={clear_full:?}");
         }
     }
 }
