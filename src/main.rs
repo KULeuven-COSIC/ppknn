@@ -113,7 +113,7 @@ fn simulate(
     k: usize,
     target: &[u64],
     verbose: bool,
-) -> (Vec<(u64, u64)>, u128, u128, usize) {
+) -> (Vec<(u64, u64)>, u128, u128, usize, f64) {
     let (glwe, lwe) = client.make_query(target);
 
     let server_start = Instant::now();
@@ -138,15 +138,13 @@ fn simulate(
     let server_dur = server_start.elapsed().as_millis();
     let comparisons = sorter.comparisons();
 
-    (
-        sorter.inner()[..k]
-            .iter()
-            .map(|ct| ct.decrypt(&client.key))
-            .collect(),
-        dist_dur,
-        server_dur,
-        comparisons,
-    )
+    let decrypted_k: Vec<_> = sorter.inner()[..k]
+        .iter()
+        .map(|ct| ct.decrypt(&client.key))
+        .collect();
+
+    let first_noise = client.lwe_noise(&sorter.inner()[0].value, decrypted_k[0].0);
+    (decrypted_k, dist_dur, server_dur, comparisons, first_noise)
 }
 
 fn majority(vs: &[u64]) -> u64 {
@@ -193,7 +191,7 @@ fn main() {
                     .collect::<Vec<_>>()
             )
         }
-        let (actual_full, dist_dur, total_dur, comparisons) = simulate(
+        let (actual_full, dist_dur, total_dur, comparisons, noise) = simulate(
             params,
             &mut client,
             server.clone(),
@@ -208,7 +206,7 @@ fn main() {
         let (clear_full, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
         let clear_labels: Vec<_> = clear_full.iter().map(|l| l.class).collect();
         let clear_maj = majority(&clear_labels);
-        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, \
+        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
             actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
             clear_maj==expected, actual_maj==expected);
 
