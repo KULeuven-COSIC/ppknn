@@ -10,6 +10,7 @@ bincode = "1.3"
 clap = { version = "4.2", features = ["derive"] }
 csv = "1.2"
 dyn-stack = "0.8.3" # must match the version in tfhe-rs
+rand = "0.8.5"
 
 [target.'cfg(windows)'.dependencies]
 tfhe = { git = "https://github.com/kc1212/tfhe-rs", branch = "expose-sk", features = ["boolean", "shortint", "x86_64"] }

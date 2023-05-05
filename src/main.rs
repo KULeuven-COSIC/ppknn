@@ -40,6 +40,13 @@ pub struct Cli {
     )]
     pub binary_threshold: u64,
 
+    #[clap(
+        long,
+        default_value_t = false,
+        help = "whether to shuffle the model and test data"
+    )]
+    pub no_shuffle: bool,
+
     #[clap(short, long, default_value_t = false, help = "print more information")]
     pub verbose: bool,
 }
@@ -170,6 +177,7 @@ fn main() {
         cli.model_size,
         cli.test_size,
         cli.binary_threshold,
+        cli.no_shuffle,
     );
 
     let (mut client, server) =

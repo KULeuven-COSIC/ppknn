@@ -6,6 +6,7 @@ pub use batcher::*;
 pub use comparator::*;
 
 use dyn_stack::{mem::GlobalMemBuffer, DynStack, ReborrowMut};
+use rand::seq::SliceRandom;
 use std::fs;
 use tfhe::core_crypto::fft_impl::c64;
 use tfhe::core_crypto::fft_impl::math::fft::FftView;
@@ -42,6 +43,7 @@ pub fn parse_csv(
     model_size: usize,
     test_size: usize,
     binary_threshold: u64,
+    no_shuffle: bool,
 ) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>) {
     let mut model_vec: Vec<Vec<u64>> = vec![];
     let mut test_vec: Vec<Vec<u64>> = vec![];
@@ -51,11 +53,22 @@ pub fn parse_csv(
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(f_handle);
-    for (i, res) in reader.records().enumerate() {
-        let record = res.unwrap();
-        let mut row: Vec<_> = record.iter().map(|s| s.parse().unwrap()).collect();
-        let last = row.pop().unwrap();
 
+    let mut rows: Vec<_> = reader
+        .records()
+        .map(|res| {
+            let record = res.unwrap();
+            record.iter().map(|s| s.parse().unwrap()).collect::<Vec<_>>()
+        })
+        .collect();
+
+    if !no_shuffle {
+        let mut rng = rand::thread_rng();
+        rows.shuffle(&mut rng);
+    }
+
+    for (i, mut row) in rows.into_iter().enumerate() {
+        let last = row.pop().unwrap();
         if i < model_size {
             model_vec.push(row);
             model_labels.push(last);
