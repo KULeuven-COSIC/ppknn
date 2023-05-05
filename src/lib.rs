@@ -142,7 +142,7 @@ pub struct KnnServer {
     labels: Vec<Ciphertext>, // trivially encrypted labels
 }
 
-pub(crate) fn setup_polymul_fft(params: Parameters) -> (Fft, GlobalMemBuffer) {
+fn setup_polymul_fft(params: Parameters) -> (Fft, GlobalMemBuffer) {
     let fft = Fft::new(params.polynomial_size);
     let fft_view = fft.as_view();
 
@@ -166,7 +166,7 @@ impl KnnServer {
         self.compute_distances_with_fft(c, c2, fft.as_view(), &mut stack)
     }
 
-    pub fn compute_distances_with_fft(
+    fn compute_distances_with_fft(
         &self,
         c: &GlweCiphertextOwned<u64>,
         c2: &Ciphertext,
@@ -288,16 +288,6 @@ impl KnnServer {
         output_glwe
     }
 
-    pub(crate) fn polynomial_glwe_mul(
-        &self,
-        glwe: &GlweCiphertextOwned<u64>,
-        poly: &PolynomialOwned<u64>,
-    ) -> GlweCiphertextOwned<u64> {
-        let (fft, mut mem) = setup_polymul_fft(self.params);
-        let mut stack = DynStack::new(&mut mem);
-        self.polynomial_glwe_mul_with_fft(glwe, poly, fft.as_view(), &mut stack)
-    }
-
     pub(crate) fn polynomial_glwe_mul_with_fft(
         &self,
         glwe: &GlweCiphertextOwned<u64>,
@@ -336,6 +326,8 @@ impl KnnServer {
         &self,
         left_glwe: &GlweCiphertextOwned<u64>,
         right_glwe: &GlweCiphertextOwned<u64>,
+        fft: FftView,
+        stack: &mut DynStack,
     ) -> Accumulator {
         let half_n = self.params.polynomial_size.0 / 2;
         let chunk_size = self.params.polynomial_size.0 / self.params.message_modulus.0;
@@ -367,8 +359,8 @@ impl KnnServer {
         });
 
         // create the two halves of the accumulator
-        let mut left_acc = self.polynomial_glwe_mul(&left_glwe, &left_poly);
-        let right_acc = self.polynomial_glwe_mul(&right_glwe, &right_poly);
+        let mut left_acc = self.polynomial_glwe_mul_with_fft(&left_glwe, &left_poly, fft, stack);
+        let right_acc = self.polynomial_glwe_mul_with_fft(&right_glwe, &right_poly, fft, stack);
 
         // sum the two halves into the left one
         left_acc
@@ -389,7 +381,13 @@ impl KnnServer {
         delta
     }
 
-    pub fn trivially_double_ct_acc(&self, left_value: u64, right_value: u64) -> Accumulator {
+    pub fn trivially_double_ct_acc(
+        &self,
+        left_value: u64,
+        right_value: u64,
+        fft: FftView,
+        stack: &mut DynStack,
+    ) -> Accumulator {
         let encode = |message: u64| -> u64 {
             //The delta is the one defined by the parameters
             let delta = self.delta();
@@ -423,15 +421,21 @@ impl KnnServer {
         trivially_encrypt_glwe_ciphertext(&mut left_glwe, &left_encoded);
         trivially_encrypt_glwe_ciphertext(&mut right_glwe, &right_encoded);
 
-        self.double_glwe_acc(&left_glwe, &right_glwe)
+        self.double_glwe_acc(&left_glwe, &right_glwe, fft, stack)
     }
 
-    pub fn double_ct_acc(&self, left_lwe: &Ciphertext, right_lwe: &Ciphertext) -> Accumulator {
+    pub fn double_ct_acc(
+        &self,
+        left_lwe: &Ciphertext,
+        right_lwe: &Ciphertext,
+        fft: FftView,
+        stack: &mut DynStack,
+    ) -> Accumulator {
         // first key switch the LWE ciphertexts to GLWE
         let left_glwe = self.lwe_to_glwe(&left_lwe);
         let right_glwe = self.lwe_to_glwe(&right_lwe);
 
-        self.double_glwe_acc(&left_glwe, &right_glwe)
+        self.double_glwe_acc(&left_glwe, &right_glwe, fft, stack)
     }
 
     fn special_sub(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
@@ -448,7 +452,9 @@ impl KnnServer {
     }
 
     pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
-        let acc = self.double_ct_acc(a, b);
+        let (fft, mut mem) = setup_polymul_fft(self.params);
+        let mut stack = DynStack::new(&mut mem);
+        let acc = self.double_ct_acc(a, b, fft.as_view(), &mut stack);
 
         let diff = self.special_sub(&b, &a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
@@ -461,7 +467,9 @@ impl KnnServer {
         a: &Ciphertext,
         b: &Ciphertext,
     ) -> Ciphertext {
-        let acc = self.trivially_double_ct_acc(a_pt, b_pt);
+        let (fft, mut mem) = setup_polymul_fft(self.params);
+        let mut stack = DynStack::new(&mut mem);
+        let acc = self.trivially_double_ct_acc(a_pt, b_pt, fft.as_view(), &mut stack);
 
         let diff = self.special_sub(&b, &a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
@@ -474,7 +482,9 @@ impl KnnServer {
         i: &Ciphertext,
         j: &Ciphertext,
     ) -> Ciphertext {
-        let acc = self.double_ct_acc(i, j);
+        let (fft, mut mem) = setup_polymul_fft(self.params);
+        let mut stack = DynStack::new(&mut mem);
+        let acc = self.double_ct_acc(i, j, fft.as_view(), &mut stack);
 
         let diff = self.special_sub(&b, &a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
@@ -872,7 +882,10 @@ mod test {
             tmp.rotate_left(chunk_size / 2);
             tmp
         });
-        let glwe_acc = server.polynomial_glwe_mul(&ct_after, &poly_ones);
+        let (fft, mut mem) = setup_polymul_fft(TEST_PARAM);
+        let mut stack = DynStack::new(&mut mem);
+        let glwe_acc =
+            server.polynomial_glwe_mul_with_fft(&ct_after, &poly_ones, fft.as_view(), &mut stack);
 
         let acc = Accumulator {
             acc: glwe_acc,
@@ -895,7 +908,15 @@ mod test {
         let left = 1u64;
         let right = server.params.message_modulus.0 as u64 - 1;
         // let acc = server.trivially_double_ct_acc(left, right);
-        let acc = server.double_ct_acc(&client.key.encrypt(left), &client.key.encrypt(right));
+        let (fft, mut mem) = setup_polymul_fft(TEST_PARAM);
+        let mut stack = DynStack::new(&mut mem);
+        let acc = server.double_ct_acc(
+            &client.key.encrypt(left),
+            &client.key.encrypt(right),
+            fft.as_view(),
+            &mut stack,
+        );
+
         let modulus = server.params.message_modulus.0;
         for x in 0u64..modulus as u64 {
             let ct = client.key.encrypt(x);
