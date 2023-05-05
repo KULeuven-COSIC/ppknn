@@ -1,4 +1,5 @@
-use crate::KnnServer;
+use crate::{setup_polymul_fft, KnnServer};
+use dyn_stack::DynStack;
 use std::cell::RefCell;
 use std::cmp::{Ord, Ordering};
 use std::fmt;
@@ -141,15 +142,23 @@ impl Comparator for EncCmp {
     type Item = EncItem;
 
     fn cmp_at(&mut self, i: usize, j: usize) {
-        let min_value = self
-            .server
-            .borrow()
-            .min(&self.vs[i].value, &self.vs[j].value);
-        let min_class = self.server.borrow().arg_min(
+        let (fft, mut mem) = setup_polymul_fft(self.params);
+        let fft = fft.as_view();
+        let mut stack = DynStack::new(&mut mem);
+
+        let min_value = self.server.borrow().min_with_fft(
+            &self.vs[i].value,
+            &self.vs[j].value,
+            fft,
+            &mut stack,
+        );
+        let min_class = self.server.borrow().arg_min_with_fft(
             &self.vs[i].value,
             &self.vs[j].value,
             &self.vs[i].class,
             &self.vs[j].class,
+            fft,
+            &mut stack,
         );
 
         let mut max_value = self

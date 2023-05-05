@@ -142,7 +142,7 @@ pub struct KnnServer {
     labels: Vec<Ciphertext>, // trivially encrypted labels
 }
 
-fn setup_polymul_fft(params: Parameters) -> (Fft, GlobalMemBuffer) {
+pub(crate) fn setup_polymul_fft(params: Parameters) -> (Fft, GlobalMemBuffer) {
     let fft = Fft::new(params.polynomial_size);
     let fft_view = fft.as_view();
 
@@ -166,7 +166,7 @@ impl KnnServer {
         self.compute_distances_with_fft(c, c2, fft.as_view(), &mut stack)
     }
 
-    fn compute_distances_with_fft(
+    pub fn compute_distances_with_fft(
         &self,
         c: &GlweCiphertextOwned<u64>,
         c2: &Ciphertext,
@@ -451,13 +451,23 @@ impl KnnServer {
         res
     }
 
-    pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
-        let (fft, mut mem) = setup_polymul_fft(self.params);
-        let mut stack = DynStack::new(&mut mem);
-        let acc = self.double_ct_acc(a, b, fft.as_view(), &mut stack);
+    pub fn min_with_fft(
+        &self,
+        a: &Ciphertext,
+        b: &Ciphertext,
+        fft: FftView,
+        stack: &mut DynStack,
+    ) -> Ciphertext {
+        let acc = self.double_ct_acc(a, b, fft, stack);
 
         let diff = self.special_sub(&b, &a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
+    }
+
+    pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
+        let (fft, mut mem) = setup_polymul_fft(self.params);
+        let mut stack = DynStack::new(&mut mem);
+        self.min_with_fft(a, b, fft.as_view(), &mut stack)
     }
 
     pub fn trivially_min(
@@ -475,6 +485,21 @@ impl KnnServer {
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
+    pub fn arg_min_with_fft(
+        &self,
+        a: &Ciphertext,
+        b: &Ciphertext,
+        i: &Ciphertext,
+        j: &Ciphertext,
+        fft: FftView,
+        stack: &mut DynStack,
+    ) -> Ciphertext {
+        let acc = self.double_ct_acc(i, j, fft, stack);
+
+        let diff = self.special_sub(&b, &a);
+        self.key.keyswitch_programmable_bootstrap(&diff, &acc)
+    }
+
     pub fn arg_min(
         &self,
         a: &Ciphertext,
@@ -484,10 +509,7 @@ impl KnnServer {
     ) -> Ciphertext {
         let (fft, mut mem) = setup_polymul_fft(self.params);
         let mut stack = DynStack::new(&mut mem);
-        let acc = self.double_ct_acc(i, j, fft.as_view(), &mut stack);
-
-        let diff = self.special_sub(&b, &a);
-        self.key.keyswitch_programmable_bootstrap(&diff, &acc)
+        self.arg_min_with_fft(a, b, i, j, fft.as_view(), &mut stack)
     }
 
     fn new_ct(&self) -> Ciphertext {
@@ -1042,11 +1064,6 @@ mod test {
             );
             assert_eq!(client.key.decrypt(&distances[0]), expected);
         }
-    }
-
-    #[test]
-    fn test_computer_distance_with_precision() {
-        let (mut client, mut server) = setup(TEST_PARAM);
     }
 
     #[test]
