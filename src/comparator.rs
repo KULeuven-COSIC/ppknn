@@ -170,6 +170,7 @@ impl Comparator for EncCmp {
 
         self.vs[i] = EncItem::new(min_value, min_class);
         self.vs[j] = EncItem::new(max_value, max_class);
+        self.cmp_count += 1;
     }
 
     fn swap(&mut self, i: usize, j: usize) {

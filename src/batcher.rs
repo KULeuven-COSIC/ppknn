@@ -141,7 +141,6 @@ impl<T> BatcherSort<T> {
             } else {
                 index_sets[i * 2 + 1].len()
             };
-            // TODO is this right?
             // the output length is the minimum of `k` and
             // the total number of values in each chunk
             let output_len = (self.k as f64).min(len_left as f64 + len_right as f64) as usize;

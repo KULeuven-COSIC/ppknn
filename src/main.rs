@@ -176,6 +176,9 @@ fn main() {
 
     let (mut client, server) =
         setup_simulation(params, &model_vec, &model_labels, cli.initial_modulus);
+
+    let mut actual_errs = 0usize;
+    let mut clear_errs = 0usize;
     for (i, (target, expected)) in test_vec.into_iter().zip(test_labels).enumerate() {
         if cli.verbose {
             let ratio = client.delta() / client.dist_delta;
@@ -209,6 +212,13 @@ fn main() {
             actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
             clear_maj==expected, actual_maj==expected);
 
+        if actual_maj != expected {
+            actual_errs += 1;
+        }
+        if clear_maj != expected {
+            clear_errs += 1;
+        }
+
         if cli.verbose {
             if actual_maj != expected {
                 println!("[WARNING] prediction error");
@@ -221,4 +231,18 @@ fn main() {
             println!("[DEBUG] clear_full={clear_full:?}");
         }
     }
+
+    println!(
+        "[SUMMARY]: \
+        model_size={}, \
+        test_size={}, \
+        actual_errs={actual_errs}, \
+        clear_errs={clear_errs}, \
+        actual_accuracy={:.2}, \
+        clear_accuracy={:.2}",
+        cli.model_size,
+        cli.test_size,
+        1f64 - (actual_errs as f64 / cli.test_size as f64),
+        1f64 - (clear_errs as f64 / cli.test_size as f64)
+    );
 }

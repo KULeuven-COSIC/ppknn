@@ -223,6 +223,8 @@ impl KnnServer {
                 );
 
                 // add \sum_{i=0}^{\gamma-1} m_i^2
+                // NOTE: m2 can be pre-computed, but we won't save much
+                // since distance computation is fast anyway
                 let m2 = Plaintext(delta * m.iter().map(|x| *x.0 * *x.0).sum::<u64>());
                 lwe_ciphertext_plaintext_add_assign(&mut out.ct, m2);
                 out
@@ -1019,6 +1021,11 @@ mod test {
             );
             assert_eq!(client.key.decrypt(&distances[0]), expected);
         }
+    }
+
+    #[test]
+    fn test_computer_distance_with_precision() {
+        let (mut client, mut server) = setup(TEST_PARAM);
     }
 
     #[test]
