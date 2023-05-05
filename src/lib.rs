@@ -7,7 +7,6 @@ pub use comparator::*;
 
 use dyn_stack::{mem::GlobalMemBuffer, DynStack, ReborrowMut};
 use std::fs;
-use std::io::Cursor;
 use tfhe::core_crypto::fft_impl::c64;
 use tfhe::core_crypto::fft_impl::math::fft::FftView;
 use tfhe::core_crypto::fft_impl::math::polynomial::FourierPolynomial;
@@ -17,28 +16,6 @@ use tfhe::core_crypto::prelude::*;
 use tfhe::shortint::ciphertext::Degree;
 use tfhe::shortint::prelude::*;
 use tfhe::shortint::server_key::Accumulator;
-
-const DUMMY_KEY: &str = "dummy_key";
-
-pub fn read_or_gen_keys(param: Parameters) -> (ClientKey, ServerKey) {
-    match fs::read(DUMMY_KEY) {
-        Ok(s) => {
-            let mut serialized_data = Cursor::new(&s);
-            let client_key: ClientKey = bincode::deserialize_from(&mut serialized_data).unwrap();
-            let server_key: ServerKey = bincode::deserialize_from(&mut serialized_data).unwrap();
-            assert_eq!(client_key.parameters, param);
-            (client_key, server_key)
-        }
-        _ => {
-            let (client_key, server_key) = gen_keys(param);
-            let mut serialized_data = Vec::new();
-            bincode::serialize_into(&mut serialized_data, &client_key).unwrap();
-            bincode::serialize_into(&mut serialized_data, &server_key).unwrap();
-            fs::write(DUMMY_KEY, serialized_data).expect("unable to write to file");
-            (client_key, server_key)
-        }
-    }
-}
 
 pub fn gen_lwe_sk(
     params: Parameters,
