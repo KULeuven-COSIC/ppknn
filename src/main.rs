@@ -221,9 +221,10 @@ fn main() {
             let (clear_full, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
             let clear_labels: Vec<_> = clear_full.iter().map(|l| l.class).collect();
             let clear_maj = majority(&clear_labels);
-            println!("rep={rep}, dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
+            println!("rep={rep}, k={}, model_size={}, test_size={}, \
+            dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
             actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
-                    clear_maj==expected, actual_maj==expected);
+                    cli.k, cli.model_size, cli.test_size, clear_maj==expected, actual_maj==expected);
 
             if actual_maj != expected {
                 actual_errs += 1;
@@ -248,12 +249,14 @@ fn main() {
 
     println!(
         "[SUMMARY]: \
+        k={}, \
         model_size={}, \
         test_size={}, \
         actual_errs={actual_errs}, \
         clear_errs={clear_errs}, \
         actual_accuracy={:.2}, \
         clear_accuracy={:.2}",
+        cli.k,
         cli.model_size,
         cli.test_size,
         1f64 - (actual_errs as f64 / (cli.repetitions * cli.test_size) as f64),
