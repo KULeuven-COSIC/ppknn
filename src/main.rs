@@ -47,6 +47,9 @@ pub struct Cli {
     )]
     pub no_shuffle: bool,
 
+    #[clap(long, default_value_t = 1, help = "number of repetitions")]
+    pub repetitions: usize,
+
     #[clap(short, long, default_value_t = false, help = "print more information")]
     pub verbose: bool,
 }
@@ -171,70 +174,75 @@ fn majority(vs: &[u64]) -> u64 {
 fn main() {
     let params = PARAMS;
     let cli = Cli::parse();
-    let f_handle = fs::File::open(cli.file_name).expect("csv file not found");
-    let (model_vec, model_labels, test_vec, test_labels) = parse_csv(
-        f_handle,
-        cli.model_size,
-        cli.test_size,
-        cli.binary_threshold,
-        cli.no_shuffle,
-    );
-
-    let (mut client, server) =
-        setup_simulation(params, &model_vec, &model_labels, cli.initial_modulus);
 
     let mut actual_errs = 0usize;
     let mut clear_errs = 0usize;
-    for (i, (target, expected)) in test_vec.into_iter().zip(test_labels).enumerate() {
-        if cli.verbose {
-            let ratio = client.delta() / client.dist_delta;
-            println!("[DEBUG] target_no={i}");
-            println!(
-                "[DEBUG] clear_distances_top10={:?}",
-                clear_distances(&model_vec, &target)
-                    .into_iter()
-                    .map(|d| { d / ratio })
-                    .zip(model_labels.clone())
-                    .take(10)
-                    .collect::<Vec<_>>()
-            )
-        }
-        let (actual_full, dist_dur, total_dur, comparisons, noise) = simulate(
-            params,
-            &mut client,
-            server.clone(),
-            cli.k,
-            &target,
-            cli.verbose,
+
+    let csv_file_name = cli.file_name;
+    for rep in 0..cli.repetitions {
+        let f_handle = fs::File::open(csv_file_name.clone()).expect("csv file not found");
+        let (model_vec, model_labels, test_vec, test_labels) = parse_csv(
+            f_handle,
+            cli.model_size,
+            cli.test_size,
+            cli.binary_threshold,
+            cli.no_shuffle,
         );
-        let actual_labels: Vec<_> = actual_full.iter().map(|(_, b)| *b).collect();
-        let actual_maj = majority(&actual_labels);
-        assert_eq!(actual_full.len(), cli.k);
 
-        let (clear_full, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
-        let clear_labels: Vec<_> = clear_full.iter().map(|l| l.class).collect();
-        let clear_maj = majority(&clear_labels);
-        println!("dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
-            actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
-            clear_maj==expected, actual_maj==expected);
+        let (mut client, server) =
+            setup_simulation(params, &model_vec, &model_labels, cli.initial_modulus);
 
-        if actual_maj != expected {
-            actual_errs += 1;
-        }
-        if clear_maj != expected {
-            clear_errs += 1;
-        }
-
-        if cli.verbose {
-            if actual_maj != expected {
-                println!("[WARNING] prediction error");
+        for (i, (target, expected)) in test_vec.into_iter().zip(test_labels).enumerate() {
+            if cli.verbose {
+                let ratio = client.delta() / client.dist_delta;
+                println!("[DEBUG] target_no={i}");
+                println!(
+                    "[DEBUG] clear_distances_top10={:?}",
+                    clear_distances(&model_vec, &target)
+                        .into_iter()
+                        .map(|d| { d / ratio })
+                        .zip(model_labels.clone())
+                        .take(10)
+                        .collect::<Vec<_>>()
+                )
             }
-            println!(
-                "[DEBUG] max_dist={max_dist}, initial_modulus={}",
-                cli.initial_modulus
+            let (actual_full, dist_dur, total_dur, comparisons, noise) = simulate(
+                params,
+                &mut client,
+                server.clone(),
+                cli.k,
+                &target,
+                cli.verbose,
             );
-            println!("[DEBUG] actual_full={actual_full:?}");
-            println!("[DEBUG] clear_full={clear_full:?}");
+            let actual_labels: Vec<_> = actual_full.iter().map(|(_, b)| *b).collect();
+            let actual_maj = majority(&actual_labels);
+            assert_eq!(actual_full.len(), cli.k);
+
+            let (clear_full, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
+            let clear_labels: Vec<_> = clear_full.iter().map(|l| l.class).collect();
+            let clear_maj = majority(&clear_labels);
+            println!("rep={rep}, dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
+            actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
+                    clear_maj==expected, actual_maj==expected);
+
+            if actual_maj != expected {
+                actual_errs += 1;
+            }
+            if clear_maj != expected {
+                clear_errs += 1;
+            }
+
+            if cli.verbose {
+                if actual_maj != expected {
+                    println!("[WARNING] prediction error");
+                }
+                println!(
+                    "[DEBUG] max_dist={max_dist}, initial_modulus={}",
+                    cli.initial_modulus
+                );
+                println!("[DEBUG] actual_full={actual_full:?}");
+                println!("[DEBUG] clear_full={clear_full:?}");
+            }
         }
     }
 
@@ -248,7 +256,7 @@ fn main() {
         clear_accuracy={:.2}",
         cli.model_size,
         cli.test_size,
-        1f64 - (actual_errs as f64 / cli.test_size as f64),
-        1f64 - (clear_errs as f64 / cli.test_size as f64)
+        1f64 - (actual_errs as f64 / (cli.repetitions * cli.test_size) as f64),
+        1f64 - (clear_errs as f64 / (cli.repetitions * cli.test_size) as f64)
     );
 }

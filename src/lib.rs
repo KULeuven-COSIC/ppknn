@@ -58,7 +58,10 @@ pub fn parse_csv(
         .records()
         .map(|res| {
             let record = res.unwrap();
-            record.iter().map(|s| s.parse().unwrap()).collect::<Vec<_>>()
+            record
+                .iter()
+                .map(|s| s.parse().unwrap())
+                .collect::<Vec<_>>()
         })
         .collect();
 
@@ -621,6 +624,7 @@ impl KnnClient {
         delta
     }
 
+    /// Create a query. The client needs to be mutable because we mutate the encryption RNG
     pub fn make_query(&mut self, target: &[u64]) -> (GlweCiphertextOwned<u64>, Ciphertext) {
         let gamma = target.len();
         let n = self.params.polynomial_size.0;
