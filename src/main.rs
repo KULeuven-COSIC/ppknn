@@ -1,60 +1,182 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use ppknn::*;
+use rand::seq::SliceRandom;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::rc::Rc;
 use std::time::Instant;
 use tfhe::shortint::prelude::*;
 
+const MAX_MODEL: u64 = 16;
+
+#[derive(ValueEnum, Clone, Copy)]
+enum QuantizeType {
+    None,
+    Binary,
+    Ternary,
+}
+
+impl Display for QuantizeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QuantizeType::None => write!(f, "none"),
+            QuantizeType::Binary => write!(f, "binary"),
+            QuantizeType::Ternary => write!(f, "ternary"),
+        }
+    }
+}
+
+impl Debug for QuantizeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[clap(author, version, about="Privacy preserving k nearest neighbour", long_about = None)]
-pub struct Cli {
-    #[arg(
+struct Cli {
+    #[clap(
         long,
         help = "path to the file containing the training/testing set",
         required = true
     )]
-    pub file_name: String,
+    file_name: String,
 
-    #[arg(long, default_value_t = 100, help = "size of the model")]
-    pub model_size: usize,
+    #[clap(long, default_value_t = 100, help = "size of the model")]
+    model_size: usize,
 
-    #[arg(long, default_value_t = 10, help = "size of the test")]
-    pub test_size: usize,
+    #[clap(long, default_value_t = 10, help = "size of the test")]
+    test_size: usize,
 
     #[arg(short, default_value_t = 3, help = "k in knn")]
-    pub k: usize,
+    k: usize,
 
     #[clap(
         long,
         default_value_t = 0,
         help = "compute the distance with higher message modulus"
     )]
-    pub initial_modulus: u64,
+    initial_modulus: u64,
 
-    #[clap(
-        long,
-        default_value_t = 0,
-        help = "convert feature values to binary using a threshold"
-    )]
-    pub binary_threshold: u64,
+    #[clap(long, default_value_t = QuantizeType::None)]
+    quantize_type: QuantizeType,
 
     #[clap(
         long,
         default_value_t = false,
         help = "whether to shuffle the model and test data"
     )]
-    pub no_shuffle: bool,
+    no_shuffle: bool,
 
     #[clap(long, default_value_t = 1, help = "number of repetitions")]
-    pub repetitions: usize,
+    repetitions: usize,
 
     #[clap(long, default_value_t = false, help = "use csv output")]
-    pub csv: bool,
+    csv: bool,
 
     #[clap(short, long, default_value_t = false, help = "print more information")]
-    pub verbose: bool,
+    verbose: bool,
+}
+
+fn parse_csv(
+    f_handle: fs::File,
+    model_size: usize,
+    test_size: usize,
+    quantize_type: QuantizeType,
+    no_shuffle: bool,
+) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>) {
+    let mut model_vec: Vec<Vec<u64>> = vec![];
+    let mut test_vec: Vec<Vec<u64>> = vec![];
+    let mut model_labels: Vec<u64> = vec![];
+    let mut test_labels: Vec<u64> = vec![];
+
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(f_handle);
+
+    let mut rows: Vec<_> = reader
+        .records()
+        .map(|res| {
+            let record = res.unwrap();
+            record
+                .iter()
+                .map(|s| s.parse().unwrap())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    if !no_shuffle {
+        let mut rng = rand::thread_rng();
+        rows.shuffle(&mut rng);
+    }
+
+    for (i, mut row) in rows.into_iter().enumerate() {
+        let last = row.pop().unwrap();
+        if i < model_size {
+            model_vec.push(row);
+            model_labels.push(last);
+        } else if i >= model_size && i < model_size + test_size {
+            test_vec.push(row);
+            test_labels.push(last);
+        } else {
+            break;
+        }
+    }
+
+    assert_eq!(model_vec.len(), model_size);
+    assert_eq!(test_vec.len(), test_size);
+
+    match quantize_type {
+        QuantizeType::None => { /* do nothing */ }
+        QuantizeType::Binary => {
+            let threshold = MAX_MODEL / 2;
+            let f = |x| {
+                assert!(x <= MAX_MODEL);
+                if x < threshold {
+                    0
+                } else {
+                    1
+                }
+            };
+            model_vec.iter_mut().for_each(|xs| {
+                xs.iter_mut().for_each(|x| {
+                    *x = f(*x);
+                })
+            });
+            test_vec.iter_mut().for_each(|xs| {
+                xs.iter_mut().for_each(|x| {
+                    *x = f(*x);
+                })
+            });
+        }
+        QuantizeType::Ternary => {
+            let third = (MAX_MODEL as f64 / 3.0).ceil() as u64;
+            assert_eq!(third, 6);
+            let f = |x| {
+                if x < third {
+                    0
+                } else if x >= third && x < 2 * third {
+                    1
+                } else {
+                    2
+                }
+            };
+            model_vec.iter_mut().for_each(|xs| {
+                xs.iter_mut().for_each(|x| {
+                    *x = f(*x);
+                })
+            });
+            test_vec.iter_mut().for_each(|xs| {
+                xs.iter_mut().for_each(|x| {
+                    *x = f(*x);
+                })
+            });
+        }
+    }
+
+    (model_vec, model_labels, test_vec, test_labels)
 }
 
 const PARAMS: Parameters = Parameters {
@@ -184,8 +306,10 @@ fn main() {
     let csv_file_name = cli.file_name;
 
     if cli.csv {
-        println!("rep,k,model_size,test_size,dist_dur,total_dur,comparisons,noise, \
-                    actual_maj,clear_maj,expected,clear_ok,enc_ok");
+        println!(
+            "rep,k,model_size,test_size,quantize_type,dist_dur,total_dur,comparisons,noise, \
+                    actual_maj,clear_maj,expected,clear_ok,enc_ok"
+        );
     }
 
     for rep in 0..cli.repetitions {
@@ -194,7 +318,7 @@ fn main() {
             f_handle,
             cli.model_size,
             cli.test_size,
-            cli.binary_threshold,
+            cli.quantize_type,
             cli.no_shuffle,
         );
 
@@ -232,22 +356,24 @@ fn main() {
             let clear_maj = majority(&clear_labels);
             if cli.csv {
                 println!(
-                    "{rep},{},{},{},{dist_dur},{total_dur},{comparisons},{noise:.2},\
+                    "{rep},{},{},{},{},{dist_dur},{total_dur},{comparisons},{noise:.2},\
                     {actual_maj},{clear_maj},{expected},{},{}",
                     cli.k,
                     cli.model_size,
                     cli.test_size,
+                    cli.quantize_type,
                     (clear_maj == expected) as u8,
                     (actual_maj == expected) as u8
                 );
             } else {
                 println!(
-                    "rep={rep}, k={}, model_size={}, test_size={}, \
+                    "rep={rep}, k={}, model_size={}, test_size={}, quantize_type={}, \
                     dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
                     actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
                     cli.k,
                     cli.model_size,
                     cli.test_size,
+                    cli.quantize_type,
                     (clear_maj==expected) as u8,
                     (actual_maj==expected) as u8
                 );

@@ -6,8 +6,6 @@ pub use batcher::*;
 pub use comparator::*;
 
 use dyn_stack::{mem::GlobalMemBuffer, DynStack, ReborrowMut};
-use rand::seq::SliceRandom;
-use std::fs;
 use tfhe::core_crypto::fft_impl::c64;
 use tfhe::core_crypto::fft_impl::math::fft::FftView;
 use tfhe::core_crypto::fft_impl::math::polynomial::FourierPolynomial;
@@ -36,75 +34,6 @@ pub fn gen_glwe_sk(
         secret_rng,
     );
     glwe_sk
-}
-
-pub fn parse_csv(
-    f_handle: fs::File,
-    model_size: usize,
-    test_size: usize,
-    binary_threshold: u64,
-    no_shuffle: bool,
-) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>) {
-    let mut model_vec: Vec<Vec<u64>> = vec![];
-    let mut test_vec: Vec<Vec<u64>> = vec![];
-    let mut model_labels: Vec<u64> = vec![];
-    let mut test_labels: Vec<u64> = vec![];
-
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(f_handle);
-
-    let mut rows: Vec<_> = reader
-        .records()
-        .map(|res| {
-            let record = res.unwrap();
-            record
-                .iter()
-                .map(|s| s.parse().unwrap())
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    if !no_shuffle {
-        let mut rng = rand::thread_rng();
-        rows.shuffle(&mut rng);
-    }
-
-    for (i, mut row) in rows.into_iter().enumerate() {
-        let last = row.pop().unwrap();
-        if i < model_size {
-            model_vec.push(row);
-            model_labels.push(last);
-        } else if i >= model_size && i < model_size + test_size {
-            test_vec.push(row);
-            test_labels.push(last);
-        } else {
-            break;
-        }
-    }
-
-    assert_eq!(model_vec.len(), model_size);
-    assert_eq!(test_vec.len(), test_size);
-
-    if binary_threshold != 0 {
-        let max_model = model_vec.iter().flatten().max().unwrap();
-        assert!(*max_model <= u8::MAX as u64);
-        let max_test = test_vec.iter().flatten().max().unwrap();
-        assert!(*max_test <= u8::MAX as u64);
-        // let threshold = max_model.max(max_test) / 2;
-        model_vec.iter_mut().for_each(|xs| {
-            xs.iter_mut().for_each(|x| {
-                *x = if *x < binary_threshold { 0 } else { 1 };
-            })
-        });
-        test_vec.iter_mut().for_each(|xs| {
-            xs.iter_mut().for_each(|x| {
-                *x = if *x < binary_threshold { 0 } else { 1 };
-            })
-        });
-    }
-
-    (model_vec, model_labels, test_vec, test_labels)
 }
 
 pub fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
