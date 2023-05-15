@@ -50,6 +50,9 @@ pub struct Cli {
     #[clap(long, default_value_t = 1, help = "number of repetitions")]
     pub repetitions: usize,
 
+    #[clap(long, default_value_t = false, help = "use csv output")]
+    pub csv: bool,
+
     #[clap(short, long, default_value_t = false, help = "print more information")]
     pub verbose: bool,
 }
@@ -57,15 +60,15 @@ pub struct Cli {
 const PARAMS: Parameters = Parameters {
     message_modulus: MessageModulus(32),
     carry_modulus: CarryModulus(1),
-    ..PARAM_MESSAGE_2_CARRY_3 // ..PARAM_MESSAGE_1_CARRY_3
+    ..PARAM_MESSAGE_2_CARRY_3
 };
 
 fn clear_squared_distance(xs: &[u64], ys: &[u64]) -> u64 {
     xs.iter()
         .zip(ys)
         .map(|(x, y)| {
-            let out = if x > y { x - y } else { y - x };
-            out * out
+            let diff = if x > y { x - y } else { y - x };
+            diff * diff
         })
         .sum()
 }
@@ -179,6 +182,12 @@ fn main() {
     let mut clear_errs = 0usize;
 
     let csv_file_name = cli.file_name;
+
+    if cli.csv {
+        println!("rep,k,model_size,test_size,dist_dur,total_dur,comparisons,noise, \
+                    actual_maj,clear_maj,expected,clear_ok,enc_ok");
+    }
+
     for rep in 0..cli.repetitions {
         let f_handle = fs::File::open(csv_file_name.clone()).expect("csv file not found");
         let (model_vec, model_labels, test_vec, test_labels) = parse_csv(
@@ -221,10 +230,28 @@ fn main() {
             let (clear_full, max_dist) = clear_knn(cli.k, &model_vec, &model_labels, &target);
             let clear_labels: Vec<_> = clear_full.iter().map(|l| l.class).collect();
             let clear_maj = majority(&clear_labels);
-            println!("rep={rep}, k={}, model_size={}, test_size={}, \
-            dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
-            actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
-                    cli.k, cli.model_size, cli.test_size, clear_maj==expected, actual_maj==expected);
+            if cli.csv {
+                println!(
+                    "{rep},{},{},{},{dist_dur},{total_dur},{comparisons},{noise:.2},\
+                    {actual_maj},{clear_maj},{expected},{},{}",
+                    cli.k,
+                    cli.model_size,
+                    cli.test_size,
+                    (clear_maj == expected) as u8,
+                    (actual_maj == expected) as u8
+                );
+            } else {
+                println!(
+                    "rep={rep}, k={}, model_size={}, test_size={}, \
+                    dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
+                    actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
+                    cli.k,
+                    cli.model_size,
+                    cli.test_size,
+                    (clear_maj==expected) as u8,
+                    (actual_maj==expected) as u8
+                );
+            }
 
             if actual_maj != expected {
                 actual_errs += 1;
