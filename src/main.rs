@@ -307,7 +307,7 @@ fn main() {
 
     if cli.csv {
         println!(
-            "rep,k,model_size,test_size,quantize_type,dist_dur,total_dur,comparisons,noise, \
+            "rep,k,model_size,test_size,quantize_type,dist_dur,total_dur,comparisons,noise,\
                     actual_maj,clear_maj,expected,clear_ok,enc_ok"
         );
     }
