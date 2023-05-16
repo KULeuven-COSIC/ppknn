@@ -3,8 +3,8 @@
 set -e
 set -u
 
-# USAGE:
-# ./bench 40 3 5
+# USAGE, e.g.,
+# ./bench-mnist 40 ternary 3 5
 # first argument is the model size, the remaining are different values of k
 
 FILENAME=data/mnist-8x8.csv
@@ -14,14 +14,22 @@ KS="${@:3}" # https://stackoverflow.com/questions/2701400/remove-first-element-f
 
 _CHECK=$3 # check that there is at least one value of k
 
-for k in $KS; do
-    cargo run --release -- \
+if [ "$QUANTIZE_TYPE" = "binary" ]; then
+    INITIAL_MODULUS=64
+elif [ "$QUANTIZE_TYPE" = "ternary" ]; then
+    INITIAL_MODULUS=256
+fi
+
+cargo build --release
+
+for K in $KS; do
+    ./target/release/ppknn \
         --file-name "$FILENAME" \
         --model-size "$MODELSIZE" \
         --test-size 100 \
         --repetitions 10 \
-        -k "$k" \
-        --initial-modulus 64  \
+        -k "$K" \
+        --initial-modulus "$INITIAL_MODULUS" \
         --quantize-type "$QUANTIZE_TYPE" \
         --csv
 done
