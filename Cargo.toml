@@ -23,3 +23,8 @@ tfhe = { git = "https://github.com/kc1212/tfhe-rs", branch = "expose-sk", featur
 quickcheck = "1"
 quickcheck_macros = "1"
 rand = "0.8"
+criterion = "0.4"
+
+[[bench]]
+name = "my_benchmark"
+harness = false
