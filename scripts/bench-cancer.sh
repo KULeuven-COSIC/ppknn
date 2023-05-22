@@ -16,7 +16,7 @@ _CHECK=$2 # check that there is at least one value of k
 
 cargo build --release
 
-INITIAL_MODULUS=128
+INITIAL_MODULUS=32
 for K in $KS; do
     ./target/release/ppknn \
         --file-name "$FILENAME" \
