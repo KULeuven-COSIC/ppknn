@@ -39,8 +39,8 @@ impl Debug for QuantizeType {
 struct Cli {
     #[clap(
         long,
-        help = "path to the file containing the training/testing set",
-        required = true
+        default_value = "",
+        help = "path to the file containing the training/testing set, read from stdin if empty"
     )]
     file_name: String,
 
@@ -72,11 +72,7 @@ struct Cli {
     #[clap(long, default_value_t = false, help = "use csv output")]
     csv: bool,
 
-    #[clap(
-        long,
-        default_value_t = false,
-        help = "print the csv header and exit, only works if csv flag is set"
-    )]
+    #[clap(long, default_value_t = false, help = "print the csv header and exit")]
     print_header: bool,
 
     #[clap(short, long, default_value_t = false, help = "print more information")]
@@ -341,12 +337,7 @@ fn main() {
     let params = PARAMS;
     let cli = Cli::parse();
 
-    let mut actual_errs = 0usize;
-    let mut clear_errs = 0usize;
-
-    let csv_file_name = cli.file_name;
-
-    if cli.csv && cli.print_header {
+    if cli.print_header {
         println!(
             "rep,k,model_size,test_size,quantize_type,dist_dur,total_dur,comparisons,noise,\
                     actual_maj,clear_maj,expected,clear_ok,enc_ok"
@@ -354,8 +345,16 @@ fn main() {
         return;
     }
 
+    let csv_file_name = cli.file_name;
+    if csv_file_name.is_empty() {
+        unimplemented!("reading from stdin not implemented");
+    }
+
     let f_handle = fs::File::open(csv_file_name.clone()).expect("csv file not found");
     let all_rows = parse_csv(f_handle, cli.quantize_type);
+
+    let mut actual_errs = 0usize;
+    let mut clear_errs = 0usize;
 
     for rep in 0..cli.repetitions {
         let (model_vec, model_labels, test_vec, test_labels) = {
