@@ -26,8 +26,9 @@ for K in $KS; do
     ./target/release/ppknn \
         --file-name "$FILENAME" \
         --model-size "$MODELSIZE" \
-        --test-size 100 \
-        --repetitions 10 \
+        --test-size 200 \
+        --repetitions 1 \
+        --best-model \
         -k "$K" \
         --initial-modulus "$INITIAL_MODULUS" \
         --quantize-type "$QUANTIZE_TYPE" \
