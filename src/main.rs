@@ -80,6 +80,7 @@ struct Cli {
 // the accuracy is computed for all possible test vectors
 fn find_best_model(
     model_size: usize,
+    output_test_size: usize,
     k: usize,
     rows: &Vec<Vec<u64>>,
 ) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>, f64) {
@@ -114,8 +115,8 @@ fn find_best_model(
         if oks > highest_accuracy {
             final_model_vec = model_vec;
             final_model_labels = model_labels;
-            final_test_vec = test_vec;
-            final_test_labels = test_labels;
+            final_test_vec = test_vec[..output_test_size].to_vec();
+            final_test_labels = test_labels[..output_test_size].to_vec();
             highest_accuracy = oks;
         }
     }
@@ -152,8 +153,6 @@ fn split_model_test(
         }
     }
 
-    assert_eq!(model_vec.len(), model_size);
-    assert_eq!(test_vec.len(), test_size);
     (model_vec, model_labels, test_vec, test_labels)
 }
 
@@ -357,7 +356,7 @@ fn main() {
                     println!("[DEBUG] finding best model");
                 }
                 let (model_vec, model_labels, test_vec, test_labels, acc) =
-                    find_best_model(cli.model_size, cli.k, &all_rows);
+                    find_best_model(cli.model_size, cli.test_size, cli.k, &all_rows);
                 if cli.verbose {
                     println!("[DEBUG] expected accuracy: {}", acc);
                 }
@@ -366,6 +365,12 @@ fn main() {
                 split_model_test(cli.model_size, cli.test_size, all_rows.clone())
             }
         };
+
+        // sanity check
+        assert_eq!(model_vec.len(), cli.model_size);
+        assert_eq!(test_vec.len(), cli.test_size);
+        assert_eq!(model_labels.len(), cli.model_size);
+        assert_eq!(test_labels.len(), cli.test_size);
 
         let (mut client, server) =
             setup_simulation(params, &model_vec, &model_labels, cli.initial_modulus);
