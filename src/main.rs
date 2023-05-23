@@ -72,6 +72,13 @@ struct Cli {
     #[clap(long, default_value_t = false, help = "use csv output")]
     csv: bool,
 
+    #[clap(
+        long,
+        default_value_t = false,
+        help = "print the csv header and exit, only works if csv flag is set"
+    )]
+    print_header: bool,
+
     #[clap(short, long, default_value_t = false, help = "print more information")]
     verbose: bool,
 }
@@ -339,11 +346,12 @@ fn main() {
 
     let csv_file_name = cli.file_name;
 
-    if cli.csv {
+    if cli.csv && cli.print_header {
         println!(
             "rep,k,model_size,test_size,quantize_type,dist_dur,total_dur,comparisons,noise,\
                     actual_maj,clear_maj,expected,clear_ok,enc_ok"
         );
+        return;
     }
 
     let f_handle = fs::File::open(csv_file_name.clone()).expect("csv file not found");
@@ -450,8 +458,9 @@ fn main() {
         }
     }
 
-    println!(
-        "[SUMMARY]: \
+    if cli.verbose {
+        println!(
+            "[SUMMARY]: \
         k={}, \
         model_size={}, \
         test_size={}, \
@@ -459,10 +468,11 @@ fn main() {
         clear_errs={clear_errs}, \
         actual_accuracy={:.2}, \
         clear_accuracy={:.2}",
-        cli.k,
-        cli.model_size,
-        cli.test_size,
-        1f64 - (actual_errs as f64 / (cli.repetitions * cli.test_size) as f64),
-        1f64 - (clear_errs as f64 / (cli.repetitions * cli.test_size) as f64)
-    );
+            cli.k,
+            cli.model_size,
+            cli.test_size,
+            1f64 - (actual_errs as f64 / (cli.repetitions * cli.test_size) as f64),
+            1f64 - (clear_errs as f64 / (cli.repetitions * cli.test_size) as f64)
+        );
+    }
 }
