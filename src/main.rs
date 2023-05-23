@@ -63,12 +63,8 @@ struct Cli {
     #[clap(long, default_value_t = QuantizeType::None)]
     quantize_type: QuantizeType,
 
-    #[clap(
-        long,
-        default_value_t = false,
-        help = "whether to shuffle the model and test data"
-    )]
-    no_shuffle: bool,
+    #[clap(long, default_value_t = false, help = "attempt to find the best model")]
+    best_model: bool,
 
     #[clap(long, default_value_t = 1, help = "number of repetitions")]
     repetitions: usize,
@@ -80,37 +76,68 @@ struct Cli {
     verbose: bool,
 }
 
-fn parse_csv(
-    f_handle: fs::File,
+// repeatedly train and find the set that has the highest accuracy
+// the accuracy is computed for all possible test vectors
+fn find_best_model(
+    model_size: usize,
+    k: usize,
+    rows: &Vec<Vec<u64>>,
+) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>, f64) {
+    let mut final_model_vec: Vec<Vec<u64>> = vec![];
+    let mut final_test_vec: Vec<Vec<u64>> = vec![];
+    let mut final_model_labels: Vec<u64> = vec![];
+    let mut final_test_labels: Vec<u64> = vec![];
+    let mut highest_accuracy: usize = 0;
+
+    let mut rng = rand::thread_rng();
+    let test_size = rows.len() - model_size;
+
+    for _ in 0..10000 {
+        // shuffle and split model/test vector
+        let mut rows = rows.clone();
+        rows.shuffle(&mut rng);
+        let (model_vec, model_labels, test_vec, test_labels) =
+            split_model_test(model_size, test_size, rows);
+
+        // do knn and check accuracy
+        let mut oks: usize = 0;
+        for (target, expected) in test_vec.iter().zip(&test_labels) {
+            let (out, _) = clear_knn(k, &model_vec, &model_labels, &target);
+            let out_labels: Vec<_> = out.iter().map(|l| l.class).collect();
+            let res = majority(&out_labels);
+            if res == *expected {
+                oks += 1;
+            }
+        }
+
+        // check if our accuracy is higher
+        if oks > highest_accuracy {
+            final_model_vec = model_vec;
+            final_model_labels = model_labels;
+            final_test_vec = test_vec;
+            final_test_labels = test_labels;
+            highest_accuracy = oks;
+        }
+    }
+
+    (
+        final_model_vec,
+        final_model_labels,
+        final_test_vec,
+        final_test_labels,
+        highest_accuracy as f64 / test_size as f64,
+    )
+}
+
+fn split_model_test(
     model_size: usize,
     test_size: usize,
-    quantize_type: QuantizeType,
-    no_shuffle: bool,
+    rows: Vec<Vec<u64>>,
 ) -> (Vec<Vec<u64>>, Vec<u64>, Vec<Vec<u64>>, Vec<u64>) {
     let mut model_vec: Vec<Vec<u64>> = vec![];
     let mut test_vec: Vec<Vec<u64>> = vec![];
     let mut model_labels: Vec<u64> = vec![];
     let mut test_labels: Vec<u64> = vec![];
-
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(f_handle);
-
-    let mut rows: Vec<_> = reader
-        .records()
-        .map(|res| {
-            let record = res.unwrap();
-            record
-                .iter()
-                .map(|s| s.parse().unwrap())
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    if !no_shuffle {
-        let mut rng = rand::thread_rng();
-        rows.shuffle(&mut rng);
-    }
 
     for (i, mut row) in rows.into_iter().enumerate() {
         let last = row.pop().unwrap();
@@ -127,6 +154,24 @@ fn parse_csv(
 
     assert_eq!(model_vec.len(), model_size);
     assert_eq!(test_vec.len(), test_size);
+    (model_vec, model_labels, test_vec, test_labels)
+}
+
+fn parse_csv(f_handle: fs::File, quantize_type: QuantizeType) -> Vec<Vec<u64>> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(f_handle);
+
+    let mut rows: Vec<_> = reader
+        .records()
+        .map(|res| {
+            let record = res.unwrap();
+            record
+                .iter()
+                .map(|s| s.parse().unwrap())
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     match quantize_type {
         QuantizeType::None => { /* do nothing */ }
@@ -140,13 +185,8 @@ fn parse_csv(
                     1
                 }
             };
-            model_vec.iter_mut().for_each(|xs| {
-                xs.iter_mut().for_each(|x| {
-                    *x = f(*x);
-                })
-            });
-            test_vec.iter_mut().for_each(|xs| {
-                xs.iter_mut().for_each(|x| {
+            rows.iter_mut().for_each(|row| {
+                row.iter_mut().rev().skip(1).for_each(|x| {
                     *x = f(*x);
                 })
             });
@@ -163,20 +203,15 @@ fn parse_csv(
                     2
                 }
             };
-            model_vec.iter_mut().for_each(|xs| {
-                xs.iter_mut().for_each(|x| {
-                    *x = f(*x);
-                })
-            });
-            test_vec.iter_mut().for_each(|xs| {
-                xs.iter_mut().for_each(|x| {
+            rows.iter_mut().for_each(|row| {
+                row.iter_mut().rev().skip(1).for_each(|x| {
                     *x = f(*x);
                 })
             });
         }
     }
 
-    (model_vec, model_labels, test_vec, test_labels)
+    rows
 }
 
 const PARAMS: Parameters = Parameters {
@@ -312,15 +347,25 @@ fn main() {
         );
     }
 
+    let f_handle = fs::File::open(csv_file_name.clone()).expect("csv file not found");
+    let all_rows = parse_csv(f_handle, cli.quantize_type);
+
     for rep in 0..cli.repetitions {
-        let f_handle = fs::File::open(csv_file_name.clone()).expect("csv file not found");
-        let (model_vec, model_labels, test_vec, test_labels) = parse_csv(
-            f_handle,
-            cli.model_size,
-            cli.test_size,
-            cli.quantize_type,
-            cli.no_shuffle,
-        );
+        let (model_vec, model_labels, test_vec, test_labels) = {
+            if cli.best_model {
+                if cli.verbose {
+                    println!("[DEBUG] finding best model");
+                }
+                let (model_vec, model_labels, test_vec, test_labels, acc) =
+                    find_best_model(cli.model_size, cli.k, &all_rows);
+                if cli.verbose {
+                    println!("[DEBUG] expected accuracy: {}", acc);
+                }
+                (model_vec, model_labels, test_vec, test_labels)
+            } else {
+                split_model_test(cli.model_size, cli.test_size, all_rows.clone())
+            }
+        };
 
         let (mut client, server) =
             setup_simulation(params, &model_vec, &model_labels, cli.initial_modulus);

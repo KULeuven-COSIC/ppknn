@@ -12,19 +12,19 @@ MODELSIZE=$1
 KS="${@:2}" # https://stackoverflow.com/questions/2701400/remove-first-element-from-in-bash
 
 _CHECK=$2 # check that there is at least one value of k
-
+INITIAL_MODULUS=32
 
 cargo build --release
 
-INITIAL_MODULUS=32
 for K in $KS; do
     ./target/release/ppknn \
         --file-name "$FILENAME" \
         --model-size "$MODELSIZE" \
-        --test-size 100 \
-        --repetitions 10 \
+        --test-size 200 \
+        --repetitions 1 \
+        --best-model \
         -k "$K" \
         --initial-modulus "$INITIAL_MODULUS" \
-        --quantize-type ternary \
+        --quantize-type binary \
         --csv
 done
