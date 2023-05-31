@@ -1,5 +1,7 @@
 # Privacy-preserving k-nearest neighbours
 
+[![Rust](https://github.com/kc1212/ppknn/actions/workflows/rust.yml/badge.svg)](https://github.com/kc1212/ppknn/actions/workflows/rust.yml)
+
 ## Building and testing
 ```
 cargo build --release
