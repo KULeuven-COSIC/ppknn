@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use ppknn::setup_with_modulus;
+use ppknn::server::setup_with_modulus;
 use tfhe::shortint::prelude::*;
 
 const PARAMS: Parameters = Parameters {

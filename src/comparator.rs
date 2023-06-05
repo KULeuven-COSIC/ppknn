@@ -1,10 +1,11 @@
-use crate::{setup_polymul_fft, KnnServer};
+use crate::setup_polymul_fft;
 use dyn_stack::DynStack;
 use std::cell::RefCell;
 use std::cmp::{Ord, Ordering};
 use std::fmt;
 use std::rc::Rc;
 use tfhe::shortint::prelude::*;
+use crate::server::KnnServer;
 
 #[derive(Eq, Copy, Clone)]
 pub struct ClearItem {
