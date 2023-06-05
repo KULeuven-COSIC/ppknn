@@ -1,4 +1,5 @@
 pub mod batcher;
+pub mod clear_knn;
 pub mod client;
 pub mod comparator;
 pub mod server;
