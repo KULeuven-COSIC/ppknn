@@ -1,7 +1,6 @@
 pub mod batcher;
 pub mod client;
 pub mod comparator;
-pub mod keyswitch;
 pub mod server;
 
 pub use batcher::*;
