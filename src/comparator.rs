@@ -37,6 +37,7 @@ impl fmt::Debug for ClearItem {
     }
 }
 
+/// This is our comparator which is used in the Batcher odd-even network.
 pub trait Comparator {
     type Item;
     // NOTE: we can remove mut if we
@@ -55,10 +56,13 @@ pub struct ClearCmp<T: Ord + Clone> {
 }
 
 impl<T: Ord + Clone> ClearCmp<T> {
+    /// Create a plaintext vector that implements `Comparator`.
     pub fn new(vs: Vec<T>) -> Self {
         Self { cmp_count: 0, vs }
     }
 
+    /// Create a plaintext vector that implements `Comparator`
+    /// and output a boxed `Comparator`.
     pub fn boxed(vs: Vec<T>) -> Box<Self> {
         Box::new(Self { cmp_count: 0, vs })
     }
@@ -121,6 +125,9 @@ pub struct EncCmp {
 }
 
 impl EncCmp {
+    /// Create an encrypted vector that implements `Comparator`.
+    /// A reference to `KnnServer` is needed because it has the cryptography context.
+    /// The output is boxed.
     pub fn boxed(
         vs: Vec<EncItem>,
         params: Parameters,
@@ -132,10 +139,6 @@ impl EncCmp {
             params,
             server,
         })
-    }
-
-    pub fn print_params(&self) {
-        println!("{:?}", self.params)
     }
 }
 

@@ -58,6 +58,9 @@ pub fn find_best_model(
     )
 }
 
+/// Split the feature vectors into a training and testing set.
+/// The feature vectors are specified in `rows` and the last
+/// element of every vector is the label.
 pub fn split_model_test(
     model_size: usize,
     test_size: usize,
@@ -98,6 +101,7 @@ pub fn distances(data: &[Vec<u64>], target: &[u64]) -> Vec<u64> {
     data.iter().map(|x| squared_distance(x, target)).collect()
 }
 
+/// Run the k-NN classification algorithm.
 pub fn run_knn(
     k: usize,
     model_vec: &[Vec<u64>],

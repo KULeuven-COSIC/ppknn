@@ -16,8 +16,12 @@ An example is shown below.
 ```
 
 Providing a `.csv` file for the `--file-name` argument is mandatory.
-This file holds the training and testing data.
-The file should not contain values higher than 255.
+This file holds the training and testing data
+and should not contain values higher than 255.
+
+For running longer experiments,
+especially to reproduce the results from the paper,
+see the scripts `scripts/bench-cancer.sh` and `scripts/bench-mnist.sh`.
 
 ## Internals
 
@@ -25,7 +29,7 @@ This is an improvement over the k-NN
 paper by Zuber and Sirdey [0].
 We use Batcher's odd-even sorting network
 as described by Knuth [1].
-The algorithm is modified to output `k`
+The algorithm is optimized to output `k`
 sorted elements instead of `n`,
 where `n` is the length of the array.
 This modification results in much fewer comparison,

@@ -23,6 +23,8 @@ pub struct BatcherSort<T> {
 }
 
 impl<T> BatcherSort<T> {
+    /// Create an instance the full Batcher's odd-even network
+    /// where the output length is set to the length of `vs`.
     pub fn new(vs: Box<dyn Comparator<Item = T>>) -> Self {
         let k = vs.len();
         Self {
@@ -32,6 +34,8 @@ impl<T> BatcherSort<T> {
         }
     }
 
+    /// Create an instance of the truncated Batcher's odd-even network
+    /// where the the output length is `k`.
     pub fn new_k(vs: Box<dyn Comparator<Item = T>>, k: usize) -> Self {
         let k = k.min(vs.len());
         Self {
@@ -41,6 +45,7 @@ impl<T> BatcherSort<T> {
         }
     }
 
+    /// Run the sorting network.
     pub fn sort(&mut self) {
         if self.vs.len() <= 4 {
             // for lengths lower or equal to 4,
@@ -109,8 +114,10 @@ impl<T> BatcherSort<T> {
         }
     }
 
-    /// We assume the two sorted arrays we wish to merge are consecutive of length n+m,
-    /// the first one has length `n` that's always even and the second one has `m`.
+    /// Execute the merge step between two halves
+    /// where the first half has length `n/2` (indices `0..n/2`)
+    /// and the second half has length `n - n/2` (indices `n/2..n`).
+    /// We assume the two arrays we wish to merge are already sorted.
     pub fn merge(&mut self) {
         let n = self.vs.len() / 2;
         let m = self.vs.len() - n;

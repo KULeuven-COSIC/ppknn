@@ -69,6 +69,9 @@ pub(crate) fn setup_polymul_fft(params: Parameters) -> (Fft, GlobalMemBuffer) {
     (fft, mem)
 }
 
+/// This structure represents the server that is executing
+/// privacy preserving k-NN. It needs to be constructed
+/// using the `setup` function (or other variations such as `setup_with_modulus`).
 pub struct KnnServer {
     key: ServerKey,
     lwe_to_glwe_ksk: LwePrivateFunctionalPackingKeyswitchKeyOwned<u64>,
@@ -80,16 +83,24 @@ pub struct KnnServer {
 }
 
 impl KnnServer {
+    /// Compute the squared distances between the target vector given by `c` and `c2`
+    /// with the model stored in the server.
+    /// The precision is reduced automatically if the distance plaintext modulus
+    /// does not match with the sorting plaintext modulus.
     pub fn compute_distances(
         &self,
         c: &GlweCiphertextOwned<u64>,
         c2: &Ciphertext,
     ) -> Vec<Ciphertext> {
-        let (fft, mut mem) = crate::setup_polymul_fft(self.params);
+        let (fft, mut mem) = setup_polymul_fft(self.params);
         let mut stack = DynStack::new(&mut mem);
         self.compute_distances_with_fft(c, c2, fft.as_view(), &mut stack)
     }
 
+    /// Compute the squared distances between the target vector given by `c` and `c2`
+    /// with the model stored in the server using an existing FFT context.
+    /// The precision is reduced automatically if the distance plaintext modulus
+    /// does not match with the sorting plaintext modulus.
     pub fn compute_distances_with_fft(
         &self,
         c: &GlweCiphertextOwned<u64>,
@@ -109,7 +120,7 @@ impl KnnServer {
                     .as_mut_polynomial_list()
                     .iter_mut()
                     .for_each(|mut mask| {
-                        crate::polynomial_fft_wrapping_mul(
+                        polynomial_fft_wrapping_mul(
                             &mut mask,
                             &c.get_mask().as_polynomial_list().get(0),
                             &m.as_polynomial(),
@@ -117,7 +128,7 @@ impl KnnServer {
                             stack,
                         );
                     });
-                crate::polynomial_fft_wrapping_mul(
+                polynomial_fft_wrapping_mul(
                     &mut glwe.get_mut_body().as_mut_polynomial(),
                     &c.get_body().as_polynomial(),
                     &m.as_polynomial(),
@@ -161,6 +172,10 @@ impl KnnServer {
         distances
     }
 
+    /// Compute the squared distances between the target vector given by `c` and `c2`
+    /// with the model stored in the server and zip the result with the existing labels/classes.
+    /// The precision is reduced automatically if the distance plaintext modulus
+    /// does not match with the sorting plaintext modulus.
     pub fn compute_distances_with_labels(
         &self,
         c: &GlweCiphertextOwned<u64>,
@@ -175,6 +190,7 @@ impl KnnServer {
         enc_vec
     }
 
+    /// Reduce the plaintext modulus in `ct`.
     pub fn lower_precision(&self, ct: &mut Ciphertext) {
         // we assume the original ciphertext is encoded with higher precision
         // than the TFHE parameter
@@ -196,6 +212,7 @@ impl KnnServer {
         self.key.keyswitch_bootstrap_assign(ct)
     }
 
+    /// Keyswitch from LWE to RLWE.
     pub fn lwe_to_glwe(&self, ct: &Ciphertext) -> GlweCiphertextOwned<u64> {
         let mut output_glwe = GlweCiphertext::new(
             0,
@@ -228,7 +245,7 @@ impl KnnServer {
             .as_mut_polynomial_list()
             .iter_mut()
             .for_each(|mut mask| {
-                crate::polynomial_fft_wrapping_mul(
+                polynomial_fft_wrapping_mul(
                     &mut mask,
                     &glwe.get_mask().as_polynomial_list().get(0),
                     &poly,
@@ -236,7 +253,7 @@ impl KnnServer {
                     stack,
                 );
             });
-        crate::polynomial_fft_wrapping_mul(
+        polynomial_fft_wrapping_mul(
             &mut out.get_mut_body().as_mut_polynomial(),
             &glwe.get_body().as_polynomial(),
             &poly,
@@ -299,13 +316,16 @@ impl KnnServer {
         }
     }
 
+    /// Output the Delta (scaling factor) used for the
+    /// sorting plaintext modulus.
     pub fn delta(&self) -> u64 {
         let delta =
             (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
         delta
     }
 
-    pub fn trivially_double_ct_acc(
+    #[allow(dead_code)]
+    pub(crate) fn trivially_double_ct_acc(
         &self,
         left_value: u64,
         right_value: u64,
@@ -348,6 +368,9 @@ impl KnnServer {
         self.double_glwe_acc(&left_glwe, &right_glwe, fft, stack)
     }
 
+    /// Create an accumulator from two ciphertexts
+    /// such that when used in PBS, if the sign is positive,
+    /// then `left_lwe` is the output, if the sign is negative, then the output is `right_lwe`.
     pub fn double_ct_acc(
         &self,
         left_lwe: &Ciphertext,
@@ -375,6 +398,7 @@ impl KnnServer {
         res
     }
 
+    /// Compute `min(a, b)` homomorphically with an existing FFT context.
     pub fn min_with_fft(
         &self,
         a: &Ciphertext,
@@ -388,20 +412,22 @@ impl KnnServer {
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
+    /// Compute `min(a, b)` homomorphically.
     pub fn min(&self, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
-        let (fft, mut mem) = crate::setup_polymul_fft(self.params);
+        let (fft, mut mem) = setup_polymul_fft(self.params);
         let mut stack = DynStack::new(&mut mem);
         self.min_with_fft(a, b, fft.as_view(), &mut stack)
     }
 
-    pub fn trivially_min(
+    #[allow(dead_code)]
+    pub(crate) fn trivially_min(
         &self,
         a_pt: u64,
         b_pt: u64,
         a: &Ciphertext,
         b: &Ciphertext,
     ) -> Ciphertext {
-        let (fft, mut mem) = crate::setup_polymul_fft(self.params);
+        let (fft, mut mem) = setup_polymul_fft(self.params);
         let mut stack = DynStack::new(&mut mem);
         let acc = self.trivially_double_ct_acc(a_pt, b_pt, fft.as_view(), &mut stack);
 
@@ -409,6 +435,8 @@ impl KnnServer {
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
+    /// Execute `arg_min(a_i, b_j) = if a == min(a_i, b_j) j else i` homomorphically
+    /// using an existing FFT context.
     pub fn arg_min_with_fft(
         &self,
         a: &Ciphertext,
@@ -424,6 +452,7 @@ impl KnnServer {
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
+    /// Execute `arg_min(a_i, b_j) = if a == min(a_i, b_j) j else i` homomorphically.
     pub fn arg_min(
         &self,
         a: &Ciphertext,
@@ -431,7 +460,7 @@ impl KnnServer {
         i: &Ciphertext,
         j: &Ciphertext,
     ) -> Ciphertext {
-        let (fft, mut mem) = crate::setup_polymul_fft(self.params);
+        let (fft, mut mem) = setup_polymul_fft(self.params);
         let mut stack = DynStack::new(&mut mem);
         self.arg_min_with_fft(a, b, i, j, fft.as_view(), &mut stack)
     }
@@ -446,6 +475,7 @@ impl KnnServer {
         res
     }
 
+    /// Create a trivial (noiseless) encryption of `x`, i.e., enc(x) = (0, Delta * x)
     pub fn trivially_encrypt(&self, x: u64) -> Ciphertext {
         self.trivially_encrypt_with_delta(x, self.delta())
     }
@@ -506,7 +536,7 @@ impl KnnServer {
     }
 }
 
-pub fn setup_with_modulus(params: Parameters, dist_modulus: u64) -> (KnnClient, KnnServer) {
+fn setup_with_modulus(params: Parameters, dist_modulus: u64) -> (KnnClient, KnnServer) {
     assert!(dist_modulus.is_power_of_two());
 
     let mut seeder = new_seeder();
@@ -542,7 +572,8 @@ pub fn setup(params: Parameters) -> (KnnClient, KnnServer) {
     setup_with_modulus(params, modulus)
 }
 
-// The data should not be encoded
+/// Setup the server and client with a model, specified by `data` and `labels`.
+/// The data should not be encoded.
 pub fn setup_with_data(
     params: Parameters,
     data: &[Vec<u64>],
@@ -583,7 +614,7 @@ pub mod test {
         carry_modulus: CarryModulus(1),
     };
 
-    pub(crate) fn decode(params: Parameters, x: u64) -> u64 {
+    fn decode(params: Parameters, x: u64) -> u64 {
         let delta = (1u64 << 63) / (params.message_modulus.0 * params.carry_modulus.0) as u64;
 
         //The bit before the message
@@ -743,7 +774,6 @@ pub mod test {
             for b_pt in 0..server.params.message_modulus.0 as u64 / 2 {
                 let b_ct = client.key.encrypt(b_pt);
                 let min_ct = server.min(&a_ct, &b_ct);
-                // let min_ct = server.trivially_min(a_pt, b_pt, &a_ct, &b_ct);
                 let actual = client.key.decrypt(&min_ct);
                 let expected = a_pt.min(b_pt);
                 println!(
@@ -751,6 +781,11 @@ pub mod test {
                     a_pt, b_pt, actual, expected
                 );
                 assert_eq!(actual, expected);
+                {
+                    let trivial_min_ct = server.trivially_min(a_pt, b_pt, &a_ct, &b_ct);
+                    let trivial_actual = client.key.decrypt(&trivial_min_ct);
+                    assert_eq!(trivial_actual, expected);
+                }
             }
         }
     }
