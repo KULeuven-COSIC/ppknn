@@ -117,8 +117,8 @@ pub fn lwe_to_glwe_keyswitch(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::client::{gen_glwe_sk, gen_lwe_sk};
     use crate::server::test::TEST_PARAM;
-    use crate::{gen_glwe_sk, gen_lwe_sk};
     use crate::test::decode;
     use tfhe::core_crypto::algorithms::glwe_encryption::decrypt_glwe_ciphertext;
     use tfhe::shortint::gen_keys;

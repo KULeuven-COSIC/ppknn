@@ -1,15 +1,16 @@
-use tfhe::shortint::{Ciphertext, gen_keys, Parameters, ServerKey};
-use dyn_stack::{DynStack,GlobalMemBuffer,ReborrowMut};
-use tfhe::core_crypto::fft_impl::c64;
-use tfhe::core_crypto::fft_impl::math::polynomial::FourierPolynomial;
-use tfhe::core_crypto::fft_impl::math::fft::FftView;
+use crate::client::KnnClient;
+use crate::EncItem;
+use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
 use tfhe::core_crypto::algorithms::*;
-use tfhe::core_crypto::prelude::*;
+use tfhe::core_crypto::fft_impl::c64;
+use tfhe::core_crypto::fft_impl::math::fft::FftView;
+use tfhe::core_crypto::fft_impl::math::polynomial::FourierPolynomial;
 use tfhe::core_crypto::prelude::polynomial_algorithms::*;
 use tfhe::core_crypto::prelude::slice_algorithms::*;
-use tfhe::shortint::server_key::Accumulator;
+use tfhe::core_crypto::prelude::*;
 use tfhe::shortint::ciphertext::Degree;
-use crate::{EncItem, KnnClient};
+use tfhe::shortint::server_key::Accumulator;
+use tfhe::shortint::{gen_keys, Ciphertext, Parameters, ServerKey};
 
 pub(crate) fn polynomial_fft_wrapping_mul<Scalar, OutputCont, LhsCont, RhsCont>(
     output: &mut Polynomial<OutputCont>,
@@ -67,7 +68,6 @@ pub(crate) fn setup_polymul_fft(params: Parameters) -> (Fft, GlobalMemBuffer) {
     );
     (fft, mem)
 }
-
 
 pub struct KnnServer {
     key: ServerKey,
@@ -558,11 +558,11 @@ pub fn setup_with_data(
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use tfhe::shortint::prelude::*;
-    use std::cell::RefCell;
-    use std::rc::Rc;
     use crate::batcher::BatcherSort;
     use crate::EncCmp;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use tfhe::shortint::prelude::*;
 
     pub(crate) const TEST_PARAM: Parameters = Parameters {
         lwe_dimension: LweDimension(742),
@@ -600,7 +600,6 @@ pub mod test {
             .map(|v| EncItem::new(client_key.encrypt(v.0), client_key.encrypt(v.1)))
             .collect()
     }
-
 
     #[test]
     fn test_tfhe_arith() {
