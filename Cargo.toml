@@ -2,6 +2,9 @@
 name = "ppknn"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+readme = "README.md"
+authors = ["Kelong Cong <kelong.cong@esat.kuleuven.be>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

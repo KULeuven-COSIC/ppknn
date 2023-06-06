@@ -1,6 +1,12 @@
-# Privacy-preserving k-nearest neighbours
+# Efficient and Secure k-NN Classification from Improved Data-Oblivious Programs and Homomorphic Encryption
 
 [![Rust](https://github.com/kc1212/ppknn/actions/workflows/rust.yml/badge.svg)](https://github.com/kc1212/ppknn/actions/workflows/rust.yml)
+
+This is the code used in the paper "Efficient and Secure k-NN Classification from Improved Data-Oblivious Programs and Homomorphic Encryption" by Kelong Cong, Robin Geelen, Jiayi Kang and Jeongeun Park.
+
+*WARNING:*
+
+This is proof-of-concept implementation. It may contain bugs and security issues. Please do not use in production systems.
 
 ## Building and testing
 ```
