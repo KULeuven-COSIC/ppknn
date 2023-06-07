@@ -2,7 +2,7 @@
 
 [![Rust](https://github.com/kc1212/ppknn/actions/workflows/rust.yml/badge.svg)](https://github.com/kc1212/ppknn/actions/workflows/rust.yml)
 
-This is the code used in the paper "Efficient and Secure k-NN Classification from Improved Data-Oblivious Programs and Homomorphic Encryption" by Kelong Cong, Robin Geelen, Jiayi Kang and Jeongeun Park.
+This is the code used in the paper "[Efficient and Secure k-NN Classification from Improved Data-Oblivious Programs and Homomorphic Encryption](https://eprint.iacr.org/2023/852)" by Kelong Cong, Robin Geelen, Jiayi Kang and Jeongeun Park.
 
 *WARNING:*
 
