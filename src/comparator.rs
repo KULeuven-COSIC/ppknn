@@ -208,7 +208,7 @@ impl Comparator for EncCmp {
     }
 }
 
-pub trait AsyncComparator {
+pub trait AsyncComparator: Sync + Send {
     type Item;
     type Aux; // auxiliary information, e.g., FFT context
 
@@ -216,7 +216,7 @@ pub trait AsyncComparator {
     fn swap(&self, a: &Self::Item, b: &Self::Item);
 }
 
-struct AsyncClearComparator {}
+pub struct AsyncClearComparator {}
 
 impl AsyncComparator for AsyncClearComparator {
     type Item = Arc<Mutex<u64>>;

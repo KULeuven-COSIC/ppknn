@@ -1,7 +1,9 @@
 use crate::comparator::Comparator;
 use crate::AsyncComparator;
+use rayon;
 use std::cmp;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 fn build_local_index_map(ix: &[usize], jx: &[usize]) -> HashMap<usize, usize> {
     let mut out = HashMap::with_capacity(ix.len() + jx.len());
@@ -261,14 +263,22 @@ impl<T> BatcherSort<T> {
     }
 }
 
-struct AsyncBatcher<T, A> {
+struct AsyncBatcher<T: Sync + Send, A> {
     k: usize,
+    cmp: Arc<dyn AsyncComparator<Item = T, Aux = A>>,
     verbose: bool,
-    cmp: Box<dyn AsyncComparator<Item = T, Aux = A>>,
 }
 
-impl<T, A> AsyncBatcher<T, A> {
-    pub fn sort(&self, vs: Vec<T>) {
+impl<T: Sync + Send, A> AsyncBatcher<T, A> {
+    pub fn new_k(
+        k: usize,
+        cmp: Arc<dyn AsyncComparator<Item = T, Aux = A>>,
+        verbose: bool,
+    ) -> Self {
+        Self { k, cmp, verbose }
+    }
+
+    pub fn sort(&self, vs: &[T]) {
         if vs.len() <= 4 {
             // for lengths lower or equal to 4,
             // we cannot split them more than 2,
@@ -276,11 +286,11 @@ impl<T, A> AsyncBatcher<T, A> {
             let chunks: Vec<_> = (0..vs.len()).collect();
             self.sort_rec(&vs, &chunks);
         } else {
-            let chunks = self.split_indices(&vs);
+            let chunks = self.split_indices(vs);
             for chunk in &chunks {
-                self.sort_rec(&vs, chunk);
+                self.sort_rec(vs, chunk);
             }
-            self.tournament_merge(&vs, chunks);
+            self.tournament_merge(vs, chunks);
         }
     }
 
@@ -321,8 +331,10 @@ impl<T, A> AsyncBatcher<T, A> {
         if indices.len() > 1 {
             let n = indices.len() / 2;
             let m = indices.len() - n;
-            self.sort_rec(vs, &indices[0..n]);
-            self.sort_rec(vs, &indices[n..n + m]);
+            rayon::join(
+                || self.sort_rec(vs, &indices[0..n]),
+                || self.sort_rec(vs, &indices[n..n + m]),
+            );
 
             // let indices: Vec<_> = (start..start + len).collect();
             let (ix_full, jx_full) = indices.split_at(n);
@@ -469,9 +481,11 @@ impl<T, A> AsyncBatcher<T, A> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::comparator::AsyncClearComparator;
     use crate::comparator::ClearCmp;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_merge_2() {
@@ -651,6 +665,24 @@ mod test {
         let mut batcher = BatcherSort::new(ClearCmp::boxed(xs));
         batcher.sort();
         TestResult::from_bool(batcher.inner() == sorted)
+    }
+
+    #[quickcheck]
+    fn prop_sort_async(xs: Vec<u64>) -> TestResult {
+        if xs.len() > 20 {
+            return TestResult::discard();
+        }
+        let mut sorted = xs.clone();
+        sorted.sort();
+
+        let a = AsyncClearComparator {};
+        let batcher = AsyncBatcher::<Arc<Mutex<u64>>, ()>::new_k(xs.len(), Arc::new(a), false);
+
+        let async_xs: Vec<_> = xs.into_iter().map(|x| Arc::new(Mutex::new(x))).collect();
+        batcher.sort(&async_xs);
+
+        let actual: Vec<_> = async_xs.into_iter().map(|x| *x.lock().unwrap()).collect();
+        TestResult::from_bool(actual == sorted)
     }
 
     #[quickcheck]
