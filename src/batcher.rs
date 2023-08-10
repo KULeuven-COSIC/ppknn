@@ -1,4 +1,5 @@
 use crate::comparator::Comparator;
+use crate::AsyncComparator;
 use std::cmp;
 use std::collections::HashMap;
 
@@ -256,6 +257,211 @@ impl<T> BatcherSort<T> {
         };
         out.split_at(expected_len).0.try_into().unwrap()
         */
+        out
+    }
+}
+
+struct AsyncBatcher<T, A> {
+    k: usize,
+    verbose: bool,
+    cmp: Box<dyn AsyncComparator<Item = T, Aux = A>>,
+}
+
+impl<T, A> AsyncBatcher<T, A> {
+    pub fn sort(&self, vs: Vec<T>) {
+        if vs.len() <= 4 {
+            // for lengths lower or equal to 4,
+            // we cannot split them more than 2,
+            // so just call `sort_rec` directly.
+            let chunks: Vec<_> = (0..vs.len()).collect();
+            self.sort_rec(&vs, &chunks);
+        } else {
+            let chunks = self.split_indices(&vs);
+            for chunk in &chunks {
+                self.sort_rec(&vs, chunk);
+            }
+            self.tournament_merge(&vs, chunks);
+        }
+    }
+
+    fn split_indices(&self, vs: &[T]) -> Vec<Vec<usize>> {
+        let len = vs.len();
+        let mut out = vec![];
+        let chunk_size = if self.k == 1 {
+            2
+        } else {
+            2usize.pow((self.k as f64).log2().ceil() as u32)
+        };
+        let chunks = len / chunk_size;
+        for i in 0..chunks {
+            let v: Vec<_> = (i * chunk_size..i * chunk_size + chunk_size).collect();
+            out.push(v);
+        }
+
+        let rem = len % chunk_size;
+        if self.verbose {
+            println!(
+                "[split_indices] k={}, len={}, chunks={}, chunk_size={}, rem={}",
+                self.k, len, chunks, chunk_size, rem
+            );
+        }
+        if rem != 0 {
+            let v: Vec<_> = (len - rem..len).collect();
+            assert_eq!(v.len(), rem);
+            out.push(v);
+        }
+        out
+    }
+
+    fn sort_rec(&self, vs: &[T], indices: &[usize]) {
+        if self.verbose {
+            println!("[sort_rec begin] indices={:?}", indices);
+        }
+        // sort every chunk recursively
+        if indices.len() > 1 {
+            let n = indices.len() / 2;
+            let m = indices.len() - n;
+            self.sort_rec(vs, &indices[0..n]);
+            self.sort_rec(vs, &indices[n..n + m]);
+
+            // let indices: Vec<_> = (start..start + len).collect();
+            let (ix_full, jx_full) = indices.split_at(n);
+
+            let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
+            let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
+            self.merge_rec(vs, &ix, &jx, self.k);
+        }
+        if self.verbose {
+            println!("[sort_rec exit] indices={:?}", indices);
+        }
+    }
+
+    /// Execute the merge step between two halves
+    /// where the first half has length `n/2` (indices `0..n/2`)
+    /// and the second half has length `n - n/2` (indices `n/2..n`).
+    /// We assume the two arrays we wish to merge are already sorted.
+    pub fn merge(&self, vs: &[T]) {
+        let n = vs.len() / 2;
+        let m = vs.len() - n;
+
+        let ix_full: Vec<_> = (0..n).collect();
+        let jx_full: Vec<_> = (n..n + m).collect();
+        let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
+        let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
+        self.merge_rec(vs, &ix, &jx, self.k)
+    }
+
+    fn tournament_merge(&self, vs: &[T], index_sets: Vec<Vec<usize>>) {
+        if index_sets.len() == 1 || index_sets.len() == 0 {
+            return;
+        }
+
+        // merge every pair of index_sets and
+        // ignore the last one if the set size is odd
+        let mut new_index_sets: Vec<Vec<usize>> = Vec::with_capacity(index_sets.len() / 2);
+        for i in 0..index_sets.len() / 2 {
+            let len_left = if index_sets[i * 2].len() > self.k {
+                self.k
+            } else {
+                index_sets[i * 2].len()
+            };
+            let len_right = if index_sets[i * 2 + 1].len() > self.k {
+                self.k
+            } else {
+                index_sets[i * 2 + 1].len()
+            };
+            // the output length is the minimum of `k` and
+            // the total number of values in each chunk
+            let output_len = (self.k as f64).min(len_left as f64 + len_right as f64) as usize;
+            self.merge_rec(
+                vs,
+                &index_sets[i * 2][0..len_left],
+                &index_sets[i * 2 + 1][0..len_right],
+                output_len,
+            );
+
+            // build a new set that combines the two old ones
+            let mut s = index_sets[i * 2].clone();
+            s.extend(index_sets[i * 2 + 1].iter());
+            new_index_sets.push(s);
+        }
+        if index_sets.len() % 2 == 1 {
+            new_index_sets.push(index_sets.last().unwrap().clone());
+        }
+        self.tournament_merge(vs, new_index_sets);
+    }
+
+    fn merge_rec(&self, vs: &[T], ix: &[usize], jx: &[usize], output_len: usize) {
+        if self.verbose {
+            println!("[merge begin] ix={:?}, jx={:?}", ix, jx);
+        }
+        let nm = ix.len() * jx.len();
+        if nm > 1 {
+            let even_ix = self.even_indices(ix);
+            let even_jx = self.even_indices(jx);
+            let odd_ix = self.odd_indices(ix);
+            let odd_jx = self.odd_indices(jx);
+
+            let odd_output_len = ((output_len as f64 - 1.) / 2.).ceil() as usize;
+            let even_output_len = output_len - odd_output_len;
+            self.merge_rec(vs, &even_ix, &even_jx, even_output_len);
+            self.merge_rec(vs, &odd_ix, &odd_jx, odd_output_len);
+
+            let even_all = [even_ix, even_jx].concat();
+            let odd_all = [odd_ix, odd_jx].concat();
+            let tmp = ((even_all.len() as f64 / 2f64).floor()
+                + (odd_all.len() as f64 / 2f64).floor()) as usize;
+            let w_max = if even_all.len() % 2 == 0 && odd_all.len() % 2 == 0 {
+                tmp - 1
+            } else {
+                tmp
+            };
+
+            // maps the global index to the local index
+            let local_index_map = build_local_index_map(ix, jx);
+            for i in 0..w_max {
+                // we need to compare the local index, not the global one
+                // i.e., ix[0] is at local index 0, jx[0] is at local index |ix|
+                if local_index_map[&odd_all[i]] < output_len
+                    || local_index_map[&even_all[i + 1]] < output_len
+                {
+                    self.cmp.compare(&vs[odd_all[i]], &vs[even_all[i + 1]]);
+                    // self.vs.cmp_at(odd_all[i], even_all[i + 1]);
+                }
+            }
+
+            // the final output is v1, w1, v2, w2...
+            // correction needed if `|ix|` is odd
+            if ix.len() % 2 == 1 {
+                let end = if jx.len() % 2 == 0 {
+                    jx.len()
+                } else {
+                    jx.len() - 1
+                };
+                for i in (0..end).step_by(2) {
+                    self.cmp.swap(&vs[jx[i]], &vs[jx[i + 1]]);
+                }
+            }
+        } else if nm == 1 {
+            self.cmp.compare(&vs[ix[0]], &vs[jx[0]]);
+        } else {
+            // do nothing because we have 1 or 0 elements
+        }
+        if self.verbose {
+            println!("[merge exit] ix={:?}, jx={:?}", ix, jx);
+        }
+    }
+
+    fn odd_indices(&self, indices: &[usize]) -> Vec<usize> {
+        let new_indices = indices.split_first().unwrap().1;
+        self.even_indices(new_indices)
+    }
+
+    fn even_indices(&self, indices: &[usize]) -> Vec<usize> {
+        let mut out = vec![];
+        for i in (0..indices.len()).step_by(2) {
+            out.push(indices[i]);
+        }
         out
     }
 }

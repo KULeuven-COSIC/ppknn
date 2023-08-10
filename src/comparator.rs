@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::cmp::{Ord, Ordering};
 use std::fmt;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use tfhe::shortint::prelude::*;
 
 #[derive(Eq, Copy, Clone)]
@@ -204,5 +205,38 @@ impl Comparator for EncCmp {
 
     fn inner(&self) -> &[EncItem] {
         &self.vs
+    }
+}
+
+pub trait AsyncComparator {
+    type Item;
+    type Aux; // auxiliary information, e.g., FFT context
+
+    fn compare(&self, a: &Self::Item, b: &Self::Item);
+    fn swap(&self, a: &Self::Item, b: &Self::Item);
+}
+
+struct AsyncClearComparator {}
+
+impl AsyncComparator for AsyncClearComparator {
+    type Item = Arc<Mutex<u64>>;
+    type Aux = ();
+
+    fn compare(&self, a: &Self::Item, b: &Self::Item) {
+        let a = a.clone();
+        let b = b.clone();
+        let mut a_value = a.lock().unwrap();
+        let mut b_value = b.lock().unwrap();
+        if *a_value > *b_value {
+            std::mem::swap(&mut *a_value, &mut *b_value);
+        }
+    }
+
+    fn swap(&self, a: &Self::Item, b: &Self::Item) {
+        let a = a.clone();
+        let b = b.clone();
+        let mut a_value = a.lock().unwrap();
+        let mut b_value = b.lock().unwrap();
+        std::mem::swap(&mut *a_value, &mut *b_value);
     }
 }
