@@ -214,9 +214,22 @@ pub trait AsyncComparator: Sync + Send {
 
     fn compare(&self, a: &Self::Item, b: &Self::Item);
     fn swap(&self, a: &Self::Item, b: &Self::Item);
+    fn compare_count(&self) -> usize;
 }
 
-pub struct AsyncClearComparator {}
+pub struct AsyncClearComparator {
+    counter: Arc<Mutex<usize>>,
+    do_count: bool,
+}
+
+impl AsyncClearComparator {
+    pub fn new() -> Self {
+        Self {
+            counter: Arc::new(Mutex::new(0)),
+            do_count: false,
+        }
+    }
+}
 
 impl AsyncComparator for AsyncClearComparator {
     type Item = Arc<Mutex<u64>>;
@@ -230,6 +243,11 @@ impl AsyncComparator for AsyncClearComparator {
         if *a_value > *b_value {
             std::mem::swap(&mut *a_value, &mut *b_value);
         }
+        if self.do_count {
+            let ctr = self.counter.clone();
+            let mut curr = ctr.lock().unwrap();
+            *curr += 1;
+        }
     }
 
     fn swap(&self, a: &Self::Item, b: &Self::Item) {
@@ -239,16 +257,27 @@ impl AsyncComparator for AsyncClearComparator {
         let mut b_guard = b.lock().unwrap();
         std::mem::swap(&mut *a_guard, &mut *b_guard);
     }
+
+    fn compare_count(&self) -> usize {
+        todo!()
+    }
 }
 
 pub struct AsyncEncComparator {
     server: Arc<RwLock<KnnServer>>,
     params: Parameters,
+    counter: Arc<Mutex<usize>>,
+    do_count: bool,
 }
 
 impl AsyncEncComparator {
     pub fn new(server: Arc<RwLock<KnnServer>>, params: Parameters) -> Self {
-        Self { server, params }
+        Self {
+            server,
+            params,
+            counter: Arc::new(Mutex::new(0)),
+            do_count: false,
+        }
     }
 }
 
@@ -286,6 +315,12 @@ impl AsyncComparator for AsyncEncComparator {
 
         *a_guard = EncItem::new(min_value, min_class);
         *b_guard = EncItem::new(max_value, max_class);
+
+        if self.do_count {
+            let ctr = self.counter.clone();
+            let mut curr = ctr.lock().unwrap();
+            *curr += 1;
+        }
     }
 
     fn swap(&self, a: &Self::Item, b: &Self::Item) {
@@ -294,5 +329,9 @@ impl AsyncComparator for AsyncEncComparator {
         let mut a_guard = a.lock().unwrap();
         let mut b_guard = b.lock().unwrap();
         std::mem::swap(&mut *a_guard, &mut *b_guard);
+    }
+
+    fn compare_count(&self) -> usize {
+        todo!()
     }
 }

@@ -860,7 +860,7 @@ pub mod test {
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
             let batcher = AsyncBatcher::new_k(1, async_cmp, false);
-            batcher.sort(&ct_vec);
+            batcher.par_sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
             let expected = (0u64, 1u64);
@@ -875,7 +875,7 @@ pub mod test {
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
             let batcher = AsyncBatcher::new_k(1, async_cmp, false);
-            batcher.sort(&ct_vec);
+            batcher.par_sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
             let expected = (1u64, 2u64);
@@ -890,7 +890,7 @@ pub mod test {
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
             let batcher = AsyncBatcher::new_k(1, async_cmp, false);
-            batcher.sort(&ct_vec);
+            batcher.par_sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
             let expected = (0u64, 3u64);

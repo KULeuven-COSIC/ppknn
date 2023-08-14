@@ -273,19 +273,19 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
         Self { k, cmp, verbose }
     }
 
-    pub fn sort(&self, vs: &[CMP::Item]) {
+    pub fn par_sort(&self, vs: &[CMP::Item]) {
         if vs.len() <= 4 {
             // for lengths lower or equal to 4,
             // we cannot split them more than 2,
             // so just call `sort_rec` directly.
             let chunks: Vec<_> = (0..vs.len()).collect();
-            self.sort_rec(&vs, &chunks);
+            self.par_sort_rec(&vs, &chunks);
         } else {
             let chunks = self.split_indices(vs);
             for chunk in &chunks {
-                self.sort_rec(vs, chunk);
+                self.par_sort_rec(vs, chunk);
             }
-            self.tournament_merge(vs, chunks);
+            self.par_tournament_merge(vs, chunks);
         }
     }
 
@@ -318,7 +318,7 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
         out
     }
 
-    fn sort_rec(&self, vs: &[CMP::Item], indices: &[usize]) {
+    fn par_sort_rec(&self, vs: &[CMP::Item], indices: &[usize]) {
         if self.verbose {
             println!("[sort_rec begin] indices={:?}", indices);
         }
@@ -327,8 +327,8 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
             let n = indices.len() / 2;
             let m = indices.len() - n;
             rayon::join(
-                || self.sort_rec(vs, &indices[0..n]),
-                || self.sort_rec(vs, &indices[n..n + m]),
+                || self.par_sort_rec(vs, &indices[0..n]),
+                || self.par_sort_rec(vs, &indices[n..n + m]),
             );
 
             // let indices: Vec<_> = (start..start + len).collect();
@@ -336,7 +336,7 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
 
             let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
             let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
-            self.merge_rec(vs, &ix, &jx, self.k);
+            self.par_merge_rec(vs, &ix, &jx, self.k);
         }
         if self.verbose {
             println!("[sort_rec exit] indices={:?}", indices);
@@ -347,7 +347,7 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
     /// where the first half has length `n/2` (indices `0..n/2`)
     /// and the second half has length `n - n/2` (indices `n/2..n`).
     /// We assume the two arrays we wish to merge are already sorted.
-    pub fn merge(&self, vs: &[CMP::Item]) {
+    pub fn par_merge(&self, vs: &[CMP::Item]) {
         let n = vs.len() / 2;
         let m = vs.len() - n;
 
@@ -355,10 +355,10 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
         let jx_full: Vec<_> = (n..n + m).collect();
         let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
         let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
-        self.merge_rec(vs, &ix, &jx, self.k)
+        self.par_merge_rec(vs, &ix, &jx, self.k)
     }
 
-    fn tournament_merge(&self, vs: &[CMP::Item], index_sets: Vec<Vec<usize>>) {
+    fn par_tournament_merge(&self, vs: &[CMP::Item], index_sets: Vec<Vec<usize>>) {
         if index_sets.len() == 1 || index_sets.len() == 0 {
             return;
         }
@@ -380,7 +380,7 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
             // the output length is the minimum of `k` and
             // the total number of values in each chunk
             let output_len = (self.k as f64).min(len_left as f64 + len_right as f64) as usize;
-            self.merge_rec(
+            self.par_merge_rec(
                 vs,
                 &index_sets[i * 2][0..len_left],
                 &index_sets[i * 2 + 1][0..len_right],
@@ -395,10 +395,10 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
         if index_sets.len() % 2 == 1 {
             new_index_sets.push(index_sets.last().unwrap().clone());
         }
-        self.tournament_merge(vs, new_index_sets);
+        self.par_tournament_merge(vs, new_index_sets);
     }
 
-    fn merge_rec(&self, vs: &[CMP::Item], ix: &[usize], jx: &[usize], output_len: usize) {
+    fn par_merge_rec(&self, vs: &[CMP::Item], ix: &[usize], jx: &[usize], output_len: usize) {
         if self.verbose {
             println!("[merge begin] ix={:?}, jx={:?}", ix, jx);
         }
@@ -412,8 +412,8 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
             let odd_output_len = ((output_len as f64 - 1.) / 2.).ceil() as usize;
             let even_output_len = output_len - odd_output_len;
             rayon::join(
-                || self.merge_rec(vs, &even_ix, &even_jx, even_output_len),
-                || self.merge_rec(vs, &odd_ix, &odd_jx, odd_output_len),
+                || self.par_merge_rec(vs, &even_ix, &even_jx, even_output_len),
+                || self.par_merge_rec(vs, &odd_ix, &odd_jx, odd_output_len),
             );
 
             let even_all = [even_ix, even_jx].concat();
@@ -672,11 +672,11 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let a = AsyncClearComparator {};
+        let a = AsyncClearComparator::new();
         let batcher = AsyncBatcher::new_k(xs.len(), a, false);
 
         let async_xs: Vec<_> = xs.into_iter().map(|x| Arc::new(Mutex::new(x))).collect();
-        batcher.sort(&async_xs);
+        batcher.par_sort(&async_xs);
 
         let actual: Vec<_> = async_xs.into_iter().map(|x| *x.lock().unwrap()).collect();
         TestResult::from_bool(actual == sorted)
