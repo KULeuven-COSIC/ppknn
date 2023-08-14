@@ -209,7 +209,7 @@ impl Comparator for EncCmp {
 }
 
 pub trait AsyncComparator: Sync + Send {
-    type Item;
+    type Item: Sync + Send;
     type Aux; // auxiliary information, e.g., FFT context
 
     fn compare(&self, a: &Self::Item, b: &Self::Item);
