@@ -3,7 +3,6 @@ use crate::AsyncComparator;
 use rayon;
 use std::cmp;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 fn build_local_index_map(ix: &[usize], jx: &[usize]) -> HashMap<usize, usize> {
     let mut out = HashMap::with_capacity(ix.len() + jx.len());
@@ -265,12 +264,12 @@ impl<T> BatcherSort<T> {
 
 pub struct AsyncBatcher<CMP> {
     k: usize,
-    cmp: Arc<CMP>,
+    cmp: CMP,
     verbose: bool,
 }
 
-impl<CMP: AsyncComparator> AsyncBatcher<CMP> {
-    pub fn new_k(k: usize, cmp: Arc<CMP>, verbose: bool) -> Self {
+impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
+    pub fn new_k(k: usize, cmp: CMP, verbose: bool) -> Self {
         Self { k, cmp, verbose }
     }
 
@@ -674,7 +673,7 @@ mod test {
         sorted.sort();
 
         let a = AsyncClearComparator {};
-        let batcher = AsyncBatcher::new_k(xs.len(), Arc::new(a), false);
+        let batcher = AsyncBatcher::new_k(xs.len(), a, false);
 
         let async_xs: Vec<_> = xs.into_iter().map(|x| Arc::new(Mutex::new(x))).collect();
         batcher.sort(&async_xs);

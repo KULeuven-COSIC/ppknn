@@ -859,7 +859,7 @@ pub mod test {
             let ct_vec = enc_vec_async(&pt_vec, &client.key);
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
-            let batcher = AsyncBatcher::new_k(1, Arc::new(async_cmp), false);
+            let batcher = AsyncBatcher::new_k(1, async_cmp, false);
             batcher.sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
@@ -874,7 +874,7 @@ pub mod test {
             let ct_vec = enc_vec_async(&pt_vec, &client.key);
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
-            let batcher = AsyncBatcher::new_k(1, Arc::new(async_cmp), false);
+            let batcher = AsyncBatcher::new_k(1, async_cmp, false);
             batcher.sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
@@ -889,7 +889,7 @@ pub mod test {
             let ct_vec = enc_vec_async(&pt_vec, &client.key);
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
-            let batcher = AsyncBatcher::new_k(1, Arc::new(async_cmp), false);
+            let batcher = AsyncBatcher::new_k(1, async_cmp, false);
             batcher.sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
