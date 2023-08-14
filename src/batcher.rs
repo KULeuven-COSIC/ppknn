@@ -263,7 +263,7 @@ impl<T> BatcherSort<T> {
     }
 }
 
-struct AsyncBatcher<T: Sync + Send, A> {
+pub struct AsyncBatcher<T: Sync + Send, A> {
     k: usize,
     cmp: Arc<dyn AsyncComparator<Item = T, Aux = A>>,
     verbose: bool,
@@ -416,8 +416,10 @@ impl<T: Sync + Send, A> AsyncBatcher<T, A> {
 
             let odd_output_len = ((output_len as f64 - 1.) / 2.).ceil() as usize;
             let even_output_len = output_len - odd_output_len;
-            self.merge_rec(vs, &even_ix, &even_jx, even_output_len);
-            self.merge_rec(vs, &odd_ix, &odd_jx, odd_output_len);
+            rayon::join(
+                || self.merge_rec(vs, &even_ix, &even_jx, even_output_len),
+                || self.merge_rec(vs, &odd_ix, &odd_jx, odd_output_len),
+            );
 
             let even_all = [even_ix, even_jx].concat();
             let odd_all = [odd_ix, odd_jx].concat();

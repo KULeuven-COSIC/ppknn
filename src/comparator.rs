@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::cmp::{Ord, Ordering};
 use std::fmt;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use tfhe::shortint::prelude::*;
 
 #[derive(Eq, Copy, Clone)]
@@ -235,8 +235,64 @@ impl AsyncComparator for AsyncClearComparator {
     fn swap(&self, a: &Self::Item, b: &Self::Item) {
         let a = a.clone();
         let b = b.clone();
-        let mut a_value = a.lock().unwrap();
-        let mut b_value = b.lock().unwrap();
-        std::mem::swap(&mut *a_value, &mut *b_value);
+        let mut a_guard = a.lock().unwrap();
+        let mut b_guard = b.lock().unwrap();
+        std::mem::swap(&mut *a_guard, &mut *b_guard);
+    }
+}
+
+pub struct AsyncEncComparator {
+    server: Arc<RwLock<KnnServer>>,
+    params: Parameters,
+}
+
+impl AsyncEncComparator {
+    pub fn new(server: Arc<RwLock<KnnServer>>, params: Parameters) -> Self {
+        Self { server, params }
+    }
+}
+
+impl AsyncComparator for AsyncEncComparator {
+    type Item = Arc<Mutex<EncItem>>;
+    type Aux = ();
+
+    fn compare(&self, a: &Self::Item, b: &Self::Item) {
+        let (fft, mut mem) = setup_polymul_fft(self.params);
+        let fft = fft.as_view();
+        let mut stack = DynStack::new(&mut mem);
+
+        let a = a.clone();
+        let b = b.clone();
+        let mut a_guard = a.lock().unwrap();
+        let mut b_guard = b.lock().unwrap();
+        let server = self.server.clone();
+        let server_guard = server.read().unwrap();
+
+        let min_value = server_guard.min_with_fft(&a_guard.value, &b_guard.value, fft, &mut stack);
+        let min_class = server_guard.arg_min_with_fft(
+            &a_guard.value,
+            &b_guard.value,
+            &a_guard.class,
+            &b_guard.class,
+            fft,
+            &mut stack,
+        );
+
+        let mut max_value = server_guard.raw_add(&a_guard.value, &b_guard.value);
+        server_guard.raw_sub_assign(&mut max_value, &min_value);
+
+        let mut max_class = server_guard.raw_add(&a_guard.class, &b_guard.class);
+        server_guard.raw_sub_assign(&mut max_class, &min_class);
+
+        *a_guard = EncItem::new(min_value, min_class);
+        *b_guard = EncItem::new(max_value, max_class);
+    }
+
+    fn swap(&self, a: &Self::Item, b: &Self::Item) {
+        let a = a.clone();
+        let b = b.clone();
+        let mut a_guard = a.lock().unwrap();
+        let mut b_guard = b.lock().unwrap();
+        std::mem::swap(&mut *a_guard, &mut *b_guard);
     }
 }

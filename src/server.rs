@@ -590,9 +590,10 @@ pub fn setup_with_data(
 pub mod test {
     use super::*;
     use crate::batcher::BatcherSort;
-    use crate::EncCmp;
+    use crate::{AsyncBatcher, AsyncEncComparator, EncCmp};
     use std::cell::RefCell;
     use std::rc::Rc;
+    use std::sync::{Arc, Mutex, RwLock};
     use tfhe::shortint::prelude::*;
 
     pub(crate) const TEST_PARAM: Parameters = Parameters {
@@ -629,6 +630,17 @@ pub mod test {
     fn enc_vec(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<EncItem> {
         vs.iter()
             .map(|v| EncItem::new(client_key.encrypt(v.0), client_key.encrypt(v.1)))
+            .collect()
+    }
+
+    fn enc_vec_async(vs: &[(u64, u64)], client_key: &ClientKey) -> Vec<Arc<Mutex<EncItem>>> {
+        vs.iter()
+            .map(|v| {
+                Arc::new(Mutex::new(EncItem::new(
+                    client_key.encrypt(v.0),
+                    client_key.encrypt(v.1),
+                )))
+            })
             .collect()
     }
 
@@ -834,6 +846,57 @@ pub mod test {
             assert_eq!(actual, expected);
 
             let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
+            println!("noise={}", noise);
+        }
+    }
+
+    #[test]
+    fn test_enc_sort_async() {
+        let (client, server) = setup(TEST_PARAM);
+        let server = Arc::new(RwLock::new(server));
+        {
+            let pt_vec = vec![(1, 0), (0, 1), (2, 2), (3u64, 3u64)];
+            let ct_vec = enc_vec_async(&pt_vec, &client.key);
+
+            let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
+            let batcher = AsyncBatcher::<_, ()>::new_k(1, Arc::new(async_cmp), false);
+            batcher.sort(&ct_vec);
+
+            let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
+            let expected = (0u64, 1u64);
+            assert_eq!(actual, expected);
+
+            let noise = client.lwe_noise(&ct_vec[0].lock().unwrap().value, expected.0);
+            println!("noise={}", noise);
+        }
+        {
+            let pt_vec = vec![(2, 0), (2, 1), (1, 2), (3u64, 3u64)];
+            let ct_vec = enc_vec_async(&pt_vec, &client.key);
+
+            let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
+            let batcher = AsyncBatcher::<_, ()>::new_k(1, Arc::new(async_cmp), false);
+            batcher.sort(&ct_vec);
+
+            let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
+            let expected = (1u64, 2u64);
+            assert_eq!(actual, expected);
+
+            let noise = client.lwe_noise(&ct_vec[0].lock().unwrap().value, expected.0);
+            println!("noise={}", noise);
+        }
+        {
+            let pt_vec = vec![(1, 0), (2, 1), (3u64, 2u64), (0, 3)];
+            let ct_vec = enc_vec_async(&pt_vec, &client.key);
+
+            let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
+            let batcher = AsyncBatcher::<_, ()>::new_k(1, Arc::new(async_cmp), false);
+            batcher.sort(&ct_vec);
+
+            let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
+            let expected = (0u64, 3u64);
+            assert_eq!(actual, expected);
+
+            let noise = client.lwe_noise(&ct_vec[0].lock().unwrap().value, expected.0);
             println!("noise={}", noise);
         }
     }
