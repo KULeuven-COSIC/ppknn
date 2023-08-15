@@ -18,6 +18,57 @@ fn build_local_index_map(ix: &[usize], jx: &[usize]) -> HashMap<usize, usize> {
     out
 }
 
+fn split_indices<T>(vs: &[T], k: usize, verbose: bool) -> Vec<Vec<usize>> {
+    let len = vs.len();
+    let mut out = vec![];
+    let chunk_size = if k == 1 {
+        2
+    } else {
+        2usize.pow((k as f64).log2().ceil() as u32)
+    };
+    let chunks = len / chunk_size;
+    for i in 0..chunks {
+        let v: Vec<_> = (i * chunk_size..i * chunk_size + chunk_size).collect();
+        out.push(v);
+    }
+
+    let rem = len % chunk_size;
+    if verbose {
+        println!(
+            "[split_indices] k={}, len={}, chunks={}, chunk_size={}, rem={}",
+            k, len, chunks, chunk_size, rem
+        );
+    }
+    if rem != 0 {
+        let v: Vec<_> = (len - rem..len).collect();
+        assert_eq!(v.len(), rem);
+        out.push(v);
+    }
+    out
+}
+
+fn odd_indices(indices: &[usize]) -> Vec<usize> {
+    let new_indices = indices.split_first().unwrap().1;
+    even_indices(new_indices)
+}
+
+fn even_indices(indices: &[usize]) -> Vec<usize> {
+    let mut out = vec![];
+    for i in (0..indices.len()).step_by(2) {
+        out.push(indices[i]);
+    }
+    // if tournament method is used this step is redundant
+    /*
+    let expected_len = if out.len() > self.k {
+        self.k
+    } else {
+        out.len()
+    };
+    out.split_at(expected_len).0.try_into().unwrap()
+    */
+    out
+}
+
 pub struct BatcherSort<CMP> {
     k: usize,
     cmp: CMP,
@@ -40,41 +91,12 @@ impl<CMP: Comparator> BatcherSort<CMP> {
             let chunks: Vec<_> = (0..vs.len()).collect();
             self.sort_rec(vs, &chunks);
         } else {
-            let chunks = self.split_indices(vs);
+            let chunks = split_indices(vs, self.k, self.verbose);
             for chunk in &chunks {
                 self.sort_rec(vs, chunk);
             }
             self.tournament_merge(vs, chunks);
         }
-    }
-
-    fn split_indices(&self, vs: &[CMP::Item]) -> Vec<Vec<usize>> {
-        let len = vs.len();
-        let mut out = vec![];
-        let chunk_size = if self.k == 1 {
-            2
-        } else {
-            2usize.pow((self.k as f64).log2().ceil() as u32)
-        };
-        let chunks = len / chunk_size;
-        for i in 0..chunks {
-            let v: Vec<_> = (i * chunk_size..i * chunk_size + chunk_size).collect();
-            out.push(v);
-        }
-
-        let rem = len % chunk_size;
-        if self.verbose {
-            println!(
-                "[split_indices] k={}, len={}, chunks={}, chunk_size={}, rem={}",
-                self.k, len, chunks, chunk_size, rem
-            );
-        }
-        if rem != 0 {
-            let v: Vec<_> = (len - rem..len).collect();
-            assert_eq!(v.len(), rem);
-            out.push(v);
-        }
-        out
     }
 
     fn sort_rec(&self, vs: &mut [CMP::Item], indices: &[usize]) {
@@ -161,10 +183,10 @@ impl<CMP: Comparator> BatcherSort<CMP> {
         }
         let nm = ix.len() * jx.len();
         if nm > 1 {
-            let even_ix = self.even_indices(ix);
-            let even_jx = self.even_indices(jx);
-            let odd_ix = self.odd_indices(ix);
-            let odd_jx = self.odd_indices(jx);
+            let even_ix = even_indices(ix);
+            let even_jx = even_indices(jx);
+            let odd_ix = odd_indices(ix);
+            let odd_jx = odd_indices(jx);
 
             let odd_output_len = ((output_len as f64 - 1.) / 2.).ceil() as usize;
             let even_output_len = output_len - odd_output_len;
@@ -219,38 +241,11 @@ impl<CMP: Comparator> BatcherSort<CMP> {
     pub fn comparisons(&self) -> usize {
         self.cmp.compare_count()
     }
-
-    fn odd_indices(&self, indices: &[usize]) -> Vec<usize> {
-        let new_indices = indices.split_first().unwrap().1;
-        self.even_indices(new_indices)
-    }
-
-    fn even_indices(&self, indices: &[usize]) -> Vec<usize> {
-        let mut out = vec![];
-        for i in (0..indices.len()).step_by(2) {
-            out.push(indices[i]);
-        }
-        // if tournament method is used this step is redundant
-        /*
-        let expected_len = if out.len() > self.k {
-            self.k
-        } else {
-            out.len()
-        };
-        out.split_at(expected_len).0.try_into().unwrap()
-        */
-        out
-    }
 }
 
-pub struct AsyncBatcher<CMP> {
-    k: usize,
-    cmp: CMP,
-    verbose: bool,
-}
-
-impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
-    pub fn new_k(k: usize, cmp: CMP, verbose: bool) -> Self {
+impl<CMP: AsyncComparator + Sync + Send> BatcherSort<CMP> {
+    pub fn par_new_k(k: usize, cmp: CMP, verbose: bool) -> Self {
+        // TODO can we use the new_k function?
         Self { k, cmp, verbose }
     }
 
@@ -262,41 +257,12 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
             let chunks: Vec<_> = (0..vs.len()).collect();
             self.par_sort_rec(&vs, &chunks);
         } else {
-            let chunks = self.split_indices(vs);
+            let chunks = split_indices(vs, self.k, self.verbose);
             for chunk in &chunks {
                 self.par_sort_rec(vs, chunk);
             }
             self.par_tournament_merge(vs, chunks);
         }
-    }
-
-    fn split_indices(&self, vs: &[CMP::Item]) -> Vec<Vec<usize>> {
-        let len = vs.len();
-        let mut out = vec![];
-        let chunk_size = if self.k == 1 {
-            2
-        } else {
-            2usize.pow((self.k as f64).log2().ceil() as u32)
-        };
-        let chunks = len / chunk_size;
-        for i in 0..chunks {
-            let v: Vec<_> = (i * chunk_size..i * chunk_size + chunk_size).collect();
-            out.push(v);
-        }
-
-        let rem = len % chunk_size;
-        if self.verbose {
-            println!(
-                "[split_indices] k={}, len={}, chunks={}, chunk_size={}, rem={}",
-                self.k, len, chunks, chunk_size, rem
-            );
-        }
-        if rem != 0 {
-            let v: Vec<_> = (len - rem..len).collect();
-            assert_eq!(v.len(), rem);
-            out.push(v);
-        }
-        out
     }
 
     fn par_sort_rec(&self, vs: &[CMP::Item], indices: &[usize]) {
@@ -385,10 +351,10 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
         }
         let nm = ix.len() * jx.len();
         if nm > 1 {
-            let even_ix = self.even_indices(ix);
-            let even_jx = self.even_indices(jx);
-            let odd_ix = self.odd_indices(ix);
-            let odd_jx = self.odd_indices(jx);
+            let even_ix = even_indices(ix);
+            let even_jx = even_indices(jx);
+            let odd_ix = odd_indices(ix);
+            let odd_jx = odd_indices(jx);
 
             let odd_output_len = ((output_len as f64 - 1.) / 2.).ceil() as usize;
             let even_output_len = output_len - odd_output_len;
@@ -440,24 +406,6 @@ impl<CMP: AsyncComparator + Sync + Send> AsyncBatcher<CMP> {
         if self.verbose {
             println!("[merge exit] ix={:?}, jx={:?}", ix, jx);
         }
-    }
-
-    /// Output the number of comparisons
-    pub fn comparisons(&self) -> usize {
-        self.cmp.compare_count()
-    }
-
-    fn odd_indices(&self, indices: &[usize]) -> Vec<usize> {
-        let new_indices = indices.split_first().unwrap().1;
-        self.even_indices(new_indices)
-    }
-
-    fn even_indices(&self, indices: &[usize]) -> Vec<usize> {
-        let mut out = vec![];
-        for i in (0..indices.len()).step_by(2) {
-            out.push(indices[i]);
-        }
-        out
     }
 }
 
@@ -584,17 +532,16 @@ mod test {
         }
     }
 
-    /*
     #[test]
     fn test_merge_10() {
+        let mut vs = vec![2, 4, 6, 8, 10, 1, 3, 5, 7, 9];
         let k = 5;
-        let mut batcher =
-            BatcherSort::new_k(ClearCmp::boxed(vec![2, 4, 6, 8, 10, 1, 3, 5, 7, 9]), k);
-        batcher.merge();
-        assert_eq!(vec![1, 2, 3, 4, 5], batcher.vs.split_at(k).0);
-        assert_eq!(10, batcher.comparisons());
+        let comparisons = test_merge_k(&mut vs, k);
+        assert_eq!(vec![1, 2, 3, 4, 5], vs.split_at(k).0);
+        assert_eq!(10, comparisons);
     }
 
+    /*
     #[test]
     fn test_sort() {
         {
@@ -674,7 +621,7 @@ mod test {
         sorted.sort();
 
         let a = AsyncClearComparator::new();
-        let batcher = AsyncBatcher::new_k(xs.len(), a, false);
+        let batcher = BatcherSort::par_new_k(xs.len(), a, false);
 
         let async_xs: Vec<_> = xs.into_iter().map(|x| Arc::new(Mutex::new(x))).collect();
         batcher.par_sort(&async_xs);

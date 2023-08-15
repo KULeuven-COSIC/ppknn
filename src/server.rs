@@ -590,7 +590,7 @@ pub fn setup_with_data(
 pub mod test {
     use super::*;
     use crate::batcher::BatcherSort;
-    use crate::{AsyncBatcher, AsyncEncComparator, EncCmp};
+    use crate::{AsyncEncComparator, EncCmp};
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::{Arc, Mutex, RwLock};
@@ -861,7 +861,7 @@ pub mod test {
             let ct_vec = enc_vec_async(&pt_vec, &client.key);
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
-            let batcher = AsyncBatcher::new_k(1, async_cmp, false);
+            let batcher = BatcherSort::par_new_k(1, async_cmp, false);
             batcher.par_sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
@@ -876,7 +876,7 @@ pub mod test {
             let ct_vec = enc_vec_async(&pt_vec, &client.key);
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
-            let batcher = AsyncBatcher::new_k(1, async_cmp, false);
+            let batcher = BatcherSort::par_new_k(1, async_cmp, false);
             batcher.par_sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
@@ -891,7 +891,7 @@ pub mod test {
             let ct_vec = enc_vec_async(&pt_vec, &client.key);
 
             let async_cmp = AsyncEncComparator::new(server.clone(), TEST_PARAM);
-            let batcher = AsyncBatcher::new_k(1, async_cmp, false);
+            let batcher = BatcherSort::par_new_k(1, async_cmp, false);
             batcher.par_sort(&ct_vec);
 
             let actual = ct_vec[0].lock().unwrap().decrypt(&client.key);
