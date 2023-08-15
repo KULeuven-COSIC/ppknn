@@ -1,5 +1,4 @@
 use clap::{Parser, ValueEnum};
-use ppknn::clear_knn;
 use ppknn::*;
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
@@ -172,7 +171,7 @@ fn simulate(
     let (glwe, lwe) = client.make_query(target);
 
     let server_start = Instant::now();
-    let distances_labels = server.borrow().compute_distances_with_labels(&glwe, &lwe);
+    let mut distances_labels = server.borrow().compute_distances_with_labels(&glwe, &lwe);
 
     if verbose {
         let distances: Vec<_> = distances_labels
@@ -188,17 +187,18 @@ fn simulate(
     }
 
     let dist_dur = server_start.elapsed().as_millis();
-    let mut sorter = BatcherSort::new_k(EncCmp::boxed(distances_labels, params, server), k);
-    sorter.sort();
+    let cmp = EncCmp::new(params, server.clone());
+    let sorter = BatcherSort::new_k(k, cmp, false);
+    sorter.sort(&mut distances_labels);
     let server_dur = server_start.elapsed().as_millis();
     let comparisons = sorter.comparisons();
 
-    let decrypted_k: Vec<_> = sorter.inner()[..k]
+    let decrypted_k: Vec<_> = distances_labels[..k]
         .iter()
         .map(|ct| ct.decrypt(&client.key))
         .collect();
 
-    let first_noise = client.lwe_noise(&sorter.inner()[0].value, decrypted_k[0].0);
+    let first_noise = client.lwe_noise(&distances_labels[0].value, decrypted_k[0].0);
     (decrypted_k, dist_dur, server_dur, comparisons, first_noise)
 }
 

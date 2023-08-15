@@ -64,6 +64,12 @@ impl<T: Ord + Clone> ClearCmp<T> {
     }
 }
 
+impl<T: Ord + Clone> Default for ClearCmp<T> {
+    fn default() -> Self {
+        ClearCmp::new()
+    }
+}
+
 impl<T: Ord + Clone> Comparator for ClearCmp<T> {
     type Item = T;
     type Aux = ();
@@ -190,6 +196,12 @@ impl AsyncClearComparator {
     }
 }
 
+impl Default for AsyncClearComparator {
+    fn default() -> Self {
+        AsyncClearComparator::new()
+    }
+}
+
 impl AsyncComparator for AsyncClearComparator {
     type Item = Arc<Mutex<u64>>;
     type Aux = ();
@@ -218,7 +230,7 @@ impl AsyncComparator for AsyncClearComparator {
     }
 
     fn compare_count(&self) -> usize {
-        todo!()
+        *self.counter.lock().unwrap()
     }
 }
 
@@ -291,6 +303,6 @@ impl AsyncComparator for AsyncEncComparator {
     }
 
     fn compare_count(&self) -> usize {
-        todo!()
+        *self.counter.lock().unwrap()
     }
 }
