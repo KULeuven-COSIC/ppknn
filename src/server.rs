@@ -151,11 +151,7 @@ impl KnnServer {
                 // c2 = \sum_{i=0}^{\gamma-1} c_i^2
                 // out <- out - m_times_c * 2
                 let mut out = c2.clone();
-                slice_wrapping_sub_scalar_mul_assign(
-                    &mut out.ct.as_mut(),
-                    &m_times_c.ct.as_ref(),
-                    2,
-                );
+                slice_wrapping_sub_scalar_mul_assign(out.ct.as_mut(), m_times_c.ct.as_ref(), 2);
 
                 // add \sum_{i=0}^{\gamma-1} m_i^2
                 // NOTE: m2 can be pre-computed, but we won't save much
@@ -206,7 +202,7 @@ impl KnnServer {
         // the recentering is done by subtracting
         // half of the maximum value (precision_ratio-1)*Delta
         // from the original pt
-        let shift = Plaintext(((delta * (precision_ratio as u64 - 1)) / 2).wrapping_neg());
+        let shift = Plaintext(((delta * (precision_ratio - 1)) / 2).wrapping_neg());
         lwe_ciphertext_plaintext_add_assign(&mut ct.ct, shift);
 
         self.key.keyswitch_bootstrap_assign(ct)
@@ -248,7 +244,7 @@ impl KnnServer {
                 polynomial_fft_wrapping_mul(
                     &mut mask,
                     &glwe.get_mask().as_polynomial_list().get(0),
-                    &poly,
+                    poly,
                     fft,
                     stack,
                 );
@@ -256,7 +252,7 @@ impl KnnServer {
         polynomial_fft_wrapping_mul(
             &mut out.get_mut_body().as_mut_polynomial(),
             &glwe.get_body().as_polynomial(),
-            &poly,
+            poly,
             fft,
             stack,
         );
@@ -300,8 +296,8 @@ impl KnnServer {
         });
 
         // create the two halves of the accumulator
-        let mut left_acc = self.polynomial_glwe_mul_with_fft(&left_glwe, &left_poly, fft, stack);
-        let right_acc = self.polynomial_glwe_mul_with_fft(&right_glwe, &right_poly, fft, stack);
+        let mut left_acc = self.polynomial_glwe_mul_with_fft(left_glwe, &left_poly, fft, stack);
+        let right_acc = self.polynomial_glwe_mul_with_fft(right_glwe, &right_poly, fft, stack);
 
         // sum the two halves into the left one
         left_acc
@@ -319,9 +315,7 @@ impl KnnServer {
     /// Output the Delta (scaling factor) used for the
     /// sorting plaintext modulus.
     pub fn delta(&self) -> u64 {
-        let delta =
-            (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
-        delta
+        (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64
     }
 
     #[allow(dead_code)]
@@ -379,8 +373,8 @@ impl KnnServer {
         stack: &mut DynStack,
     ) -> Accumulator {
         // first key switch the LWE ciphertexts to GLWE
-        let left_glwe = self.lwe_to_glwe(&left_lwe);
-        let right_glwe = self.lwe_to_glwe(&right_lwe);
+        let left_glwe = self.lwe_to_glwe(left_lwe);
+        let right_glwe = self.lwe_to_glwe(right_lwe);
 
         self.double_glwe_acc(&left_glwe, &right_glwe, fft, stack)
     }
@@ -389,7 +383,7 @@ impl KnnServer {
         // we use a raw subtract and then add by t/2 to ensure the negative
         // does not overflow into the padding bit
 
-        let mut res = self.raw_sub(&b, &a);
+        let mut res = self.raw_sub(b, a);
 
         let delta = self.delta();
         let mod_over_2 = Plaintext((self.params.message_modulus.0 as u64 / 2) * delta);
@@ -408,7 +402,7 @@ impl KnnServer {
     ) -> Ciphertext {
         let acc = self.double_ct_acc(a, b, fft, stack);
 
-        let diff = self.special_sub(&b, &a);
+        let diff = self.special_sub(b, a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
@@ -431,7 +425,7 @@ impl KnnServer {
         let mut stack = DynStack::new(&mut mem);
         let acc = self.trivially_double_ct_acc(a_pt, b_pt, fft.as_view(), &mut stack);
 
-        let diff = self.special_sub(&b, &a);
+        let diff = self.special_sub(b, a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
@@ -448,7 +442,7 @@ impl KnnServer {
     ) -> Ciphertext {
         let acc = self.double_ct_acc(i, j, fft, stack);
 
-        let diff = self.special_sub(&b, &a);
+        let diff = self.special_sub(b, a);
         self.key.keyswitch_programmable_bootstrap(&diff, &acc)
     }
 
@@ -466,13 +460,12 @@ impl KnnServer {
     }
 
     fn new_ct(&self) -> Ciphertext {
-        let res = Ciphertext {
+        Ciphertext {
             ct: LweCiphertextOwned::new(0u64, LweSize(self.params.polynomial_size.0 + 1)),
             degree: Degree(self.params.message_modulus.0 - 1),
             message_modulus: self.params.message_modulus,
             carry_modulus: self.params.carry_modulus,
-        };
-        res
+        }
     }
 
     /// Create a trivial (noiseless) encryption of `x`, i.e., enc(x) = (0, Delta * x)
@@ -489,22 +482,22 @@ impl KnnServer {
 
     pub fn raw_sub(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Ciphertext {
         let mut res = self.new_ct();
-        slice_wrapping_sub(&mut res.ct.as_mut(), &lhs.ct.as_ref(), &rhs.ct.as_ref());
+        slice_wrapping_sub(res.ct.as_mut(), lhs.ct.as_ref(), rhs.ct.as_ref());
         res
     }
 
     pub fn raw_sub_assign(&self, lhs: &mut Ciphertext, rhs: &Ciphertext) {
-        slice_wrapping_sub_assign(&mut lhs.ct.as_mut(), &rhs.ct.as_ref())
+        slice_wrapping_sub_assign(lhs.ct.as_mut(), rhs.ct.as_ref())
     }
 
     pub fn raw_add(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Ciphertext {
         let mut res = self.new_ct();
-        slice_wrapping_add(&mut res.ct.as_mut(), &lhs.ct.as_ref(), &rhs.ct.as_ref());
+        slice_wrapping_add(res.ct.as_mut(), lhs.ct.as_ref(), rhs.ct.as_ref());
         res
     }
 
     pub fn raw_add_assign(&self, lhs: &mut Ciphertext, rhs: &Ciphertext) {
-        slice_wrapping_add_assign(&mut lhs.ct.as_mut(), &rhs.ct.as_ref())
+        slice_wrapping_add_assign(lhs.ct.as_mut(), rhs.ct.as_ref())
     }
 
     pub fn set_data(&mut self, data: &[Vec<u64>]) {
@@ -659,7 +652,7 @@ pub mod test {
                 message_modulus: client.parameters.message_modulus,
                 carry_modulus: client.parameters.carry_modulus,
             };
-            slice_wrapping_sub(&mut res.ct.as_mut(), &ct_0.ct.as_ref(), &ct_1.ct.as_ref());
+            slice_wrapping_sub(res.ct.as_mut(), ct_0.ct.as_ref(), ct_1.ct.as_ref());
             assert_eq!(
                 client.decrypt_without_padding(&res),
                 client.parameters.message_modulus.0 as u64 - 1
@@ -701,7 +694,7 @@ pub mod test {
             let mut output_plaintext =
                 PlaintextList::new(0, PlaintextCount(server.params.polynomial_size.0));
             decrypt_glwe_ciphertext(
-                &client.key.get_glwe_sk_ref(),
+                client.key.get_glwe_sk_ref(),
                 &ct_after,
                 &mut output_plaintext,
             );
@@ -1032,13 +1025,11 @@ pub mod test {
 
         let input1 = Polynomial::from_container({
             (0..n)
-                .into_iter()
                 .map(|_| rand::random::<u16>() as u64)
                 .collect::<Vec<_>>()
         });
         let input2 = Polynomial::from_container({
             (0..n)
-                .into_iter()
                 .map(|_| rand::random::<u16>() as u64)
                 .collect::<Vec<_>>()
         });
@@ -1062,7 +1053,6 @@ pub mod test {
         let closest = decomposer.closest_representable(a);
         let decomposer_iter = decomposer.decompose(closest);
         let out = (1..=params.ks_level.0)
-            .into_iter()
             .rev()
             .zip(decomposer_iter)
             .map(|(level, term)| {

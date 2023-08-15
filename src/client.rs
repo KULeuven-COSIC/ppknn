@@ -7,20 +7,18 @@ pub fn gen_lwe_sk(
     params: Parameters,
     secret_rng: &mut SecretRandomGenerator<ActivatedRandomGenerator>,
 ) -> LweSecretKeyOwned<u64> {
-    let lwe_sk = allocate_and_generate_new_binary_lwe_secret_key(params.lwe_dimension, secret_rng);
-    lwe_sk
+    allocate_and_generate_new_binary_lwe_secret_key(params.lwe_dimension, secret_rng)
 }
 
 pub fn gen_glwe_sk(
     params: Parameters,
     secret_rng: &mut SecretRandomGenerator<ActivatedRandomGenerator>,
 ) -> GlweSecretKeyOwned<u64> {
-    let glwe_sk = allocate_and_generate_new_binary_glwe_secret_key(
+    allocate_and_generate_new_binary_glwe_secret_key(
         params.glwe_dimension,
         params.polynomial_size,
         secret_rng,
-    );
-    glwe_sk
+    )
 }
 
 pub struct KnnClient {
@@ -56,7 +54,7 @@ impl KnnClient {
 
     pub fn lwe_noise(&self, ct: &Ciphertext, expected_pt: u64) -> f64 {
         // pt = b - a*s = Delta*m + e
-        let mut pt = decrypt_lwe_ciphertext(&self.key.get_lwe_sk_ref(), &ct.ct);
+        let mut pt = decrypt_lwe_ciphertext(self.key.get_lwe_sk_ref(), &ct.ct);
 
         // pt = pt - Delta*m = e (encoded_ptxt is Delta*m)
         let delta = self.delta();
@@ -67,9 +65,7 @@ impl KnnClient {
     }
 
     pub fn delta(&self) -> u64 {
-        let delta =
-            (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64;
-        delta
+        (1u64 << 63) / (self.params.message_modulus.0 * self.params.carry_modulus.0) as u64
     }
 
     /// Create a query for a given `target`.
@@ -88,7 +84,7 @@ impl KnnClient {
             container.extend_from_slice(&padding);
 
             container.iter_mut().for_each(|x| {
-                *x = *x * delta;
+                *x *= delta;
             });
             container
         });
@@ -134,8 +130,8 @@ pub fn gen_ksk(
     last_polynomial[0] = u64::MAX;
 
     par_generate_lwe_private_functional_packing_keyswitch_key(
-        &lwe_sk,
-        &glwe_sk,
+        lwe_sk,
+        glwe_sk,
         &mut pfpksk,
         sk.parameters.pfks_modular_std_dev,
         encryption_rng,

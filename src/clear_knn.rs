@@ -31,7 +31,7 @@ pub fn find_best_model(
         // do knn and check accuracy
         let mut oks: usize = 0;
         for (target, expected) in test_vec.iter().zip(&test_labels) {
-            let (out, _) = run_knn(k, &model_vec, &model_labels, &target);
+            let (out, _) = run_knn(k, &model_vec, &model_labels, target);
             let out_labels: Vec<_> = out.iter().map(|l| l.class).collect();
             let res = majority(&out_labels);
             if res == *expected {
@@ -124,7 +124,7 @@ pub fn run_knn(
 }
 
 pub fn majority(vs: &[u64]) -> u64 {
-    assert!(vs.len() > 0);
+    assert!(!vs.is_empty());
     let max = vs
         .iter()
         .fold(HashMap::<u64, usize>::new(), |mut m, x| {

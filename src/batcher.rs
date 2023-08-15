@@ -115,7 +115,7 @@ impl<CMP: Comparator> BatcherSort<CMP> {
 
             let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
             let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
-            self.merge_rec(vs, &ix, &jx, self.k);
+            self.merge_rec(vs, ix, jx, self.k);
         }
         if self.verbose {
             println!("[sort_rec exit] indices={:?}", indices);
@@ -134,11 +134,11 @@ impl<CMP: Comparator> BatcherSort<CMP> {
         let jx_full: Vec<_> = (n..n + m).collect();
         let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
         let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
-        self.merge_rec(vs, &ix, &jx, self.k)
+        self.merge_rec(vs, ix, jx, self.k)
     }
 
     fn tournament_merge(&self, vs: &mut [CMP::Item], index_sets: Vec<Vec<usize>>) {
-        if index_sets.len() == 1 || index_sets.len() == 0 {
+        if index_sets.len() == 1 || index_sets.is_empty() {
             return;
         }
 
@@ -255,7 +255,7 @@ impl<CMP: AsyncComparator + Sync + Send> BatcherSort<CMP> {
             // we cannot split them more than 2,
             // so just call `sort_rec` directly.
             let chunks: Vec<_> = (0..vs.len()).collect();
-            self.par_sort_rec(&vs, &chunks);
+            self.par_sort_rec(vs, &chunks);
         } else {
             let chunks = split_indices(vs, self.k, self.verbose);
             for chunk in &chunks {
@@ -283,7 +283,7 @@ impl<CMP: AsyncComparator + Sync + Send> BatcherSort<CMP> {
 
             let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
             let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
-            self.par_merge_rec(vs, &ix, &jx, self.k);
+            self.par_merge_rec(vs, ix, jx, self.k);
         }
         if self.verbose {
             println!("[sort_rec exit] indices={:?}", indices);
@@ -302,11 +302,11 @@ impl<CMP: AsyncComparator + Sync + Send> BatcherSort<CMP> {
         let jx_full: Vec<_> = (n..n + m).collect();
         let (ix, _) = ix_full.split_at(cmp::min(ix_full.len(), self.k));
         let (jx, _) = jx_full.split_at(cmp::min(jx_full.len(), self.k));
-        self.par_merge_rec(vs, &ix, &jx, self.k)
+        self.par_merge_rec(vs, ix, jx, self.k)
     }
 
     fn par_tournament_merge(&self, vs: &[CMP::Item], index_sets: Vec<Vec<usize>>) {
-        if index_sets.len() == 1 || index_sets.len() == 0 {
+        if index_sets.len() == 1 || index_sets.is_empty() {
             return;
         }
 
@@ -652,7 +652,7 @@ mod test {
 
     #[quickcheck]
     fn prop_sort_k_5(mut xs: Vec<u16>) -> TestResult {
-        if xs.len() > 5000 || xs.len() < 1 {
+        if xs.len() > 5000 || xs.is_empty() {
             return TestResult::discard();
         }
         let k = 5usize.min(xs.len());
@@ -669,7 +669,7 @@ mod test {
 
     #[quickcheck]
     fn prop_sort_k_2(mut xs: Vec<u16>) -> TestResult {
-        if xs.len() > 5000 || xs.len() < 1 {
+        if xs.len() > 5000 || xs.is_empty() {
             return TestResult::discard();
         }
         let k = 2usize.min(xs.len());
