@@ -108,7 +108,7 @@ pub fn run_knn(
     labels: &[u64],
     target: &[u64],
 ) -> (Vec<ClearItem>, u64) {
-    let distances: Vec<_> = distances(model_vec, target)
+    let mut distances: Vec<_> = distances(model_vec, target)
         .iter()
         .zip(labels.iter())
         .map(|(value, class)| ClearItem {
@@ -117,9 +117,10 @@ pub fn run_knn(
         })
         .collect();
     let max_dist = distances.iter().map(|item| item.value).max().unwrap();
-    let mut batcher = BatcherSort::new_k(ClearCmp::boxed(distances), k);
-    batcher.sort();
-    (batcher.inner()[0..k].to_vec(), max_dist)
+    let cmp = ClearCmp::<ClearItem>::new();
+    let batcher = BatcherSort::new_k(k, cmp, false);
+    batcher.sort(&mut distances);
+    (distances[0..k].to_vec(), max_dist)
 }
 
 pub fn majority(vs: &[u64]) -> u64 {

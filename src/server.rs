@@ -808,44 +808,46 @@ pub mod test {
         let server = Rc::new(RefCell::new(server));
         {
             let pt_vec = vec![(1, 0), (0, 1), (2, 2), (3u64, 3u64)];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server.clone());
+            let mut ct_vec = enc_vec(&pt_vec, &client.key);
+            let cmp = EncCmp::new(TEST_PARAM, server.clone());
+            let sorter = BatcherSort::new_k(1, cmp, false);
+            sorter.sort(&mut ct_vec);
 
-            let mut sorter = BatcherSort::new_k(enc_cmp, 1);
-            sorter.sort();
-
-            let actual = sorter.inner()[0].decrypt(&client.key);
+            let actual = ct_vec[0].decrypt(&client.key);
             let expected = (0u64, 1u64);
             assert_eq!(actual, expected);
 
-            let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
+            let noise = client.lwe_noise(&ct_vec[0].value, expected.0);
             println!("noise={}", noise);
         }
         {
             let pt_vec = vec![(2, 0), (2, 1), (1, 2), (3u64, 3u64)];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server.clone());
+            let mut ct_vec = enc_vec(&pt_vec, &client.key);
 
-            let mut sorter = BatcherSort::new_k(enc_cmp, 1);
-            sorter.sort();
+            let cmp = EncCmp::new(TEST_PARAM, server.clone());
+            let sorter = BatcherSort::new_k(1, cmp, false);
+            sorter.sort(&mut ct_vec);
 
-            let actual = sorter.inner()[0].decrypt(&client.key);
+            let actual = ct_vec[0].decrypt(&client.key);
             let expected = (1u64, 2u64);
             assert_eq!(actual, expected);
 
-            let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
+            let noise = client.lwe_noise(&ct_vec[0].value, expected.0);
             println!("noise={}", noise);
         }
         {
             let pt_vec = vec![(1, 0), (2, 1), (3u64, 2u64), (0, 3)];
-            let enc_cmp = EncCmp::boxed(enc_vec(&pt_vec, &client.key), TEST_PARAM, server.clone());
+            let mut ct_vec = enc_vec(&pt_vec, &client.key);
 
-            let mut sorter = BatcherSort::new_k(enc_cmp, 1);
-            sorter.sort();
+            let cmp = EncCmp::new(TEST_PARAM, server.clone());
+            let sorter = BatcherSort::new_k(1, cmp, false);
+            sorter.sort(&mut ct_vec);
 
-            let actual = sorter.inner()[0].decrypt(&client.key);
+            let actual = ct_vec[0].decrypt(&client.key);
             let expected = (0u64, 3u64);
             assert_eq!(actual, expected);
 
-            let noise = client.lwe_noise(&sorter.inner()[0].value, expected.0);
+            let noise = client.lwe_noise(&ct_vec[0].value, expected.0);
             println!("noise={}", noise);
         }
     }
