@@ -195,6 +195,13 @@ impl AsyncClearComparator {
             do_count: false,
         }
     }
+
+    pub fn new_with_counter() -> Self {
+        Self {
+            counter: Arc::new(Mutex::new(0)),
+            do_count: true,
+        }
+    }
 }
 
 impl Default for AsyncClearComparator {

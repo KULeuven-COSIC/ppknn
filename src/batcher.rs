@@ -407,6 +407,11 @@ impl<CMP: AsyncComparator + Sync + Send> BatcherSort<CMP> {
             println!("[merge exit] ix={:?}, jx={:?}", ix, jx);
         }
     }
+
+    /// Output the number of comparisons
+    pub fn par_comparisons(&self) -> usize {
+        self.cmp.compare_count()
+    }
 }
 
 #[cfg(test)]
@@ -547,15 +552,25 @@ mod test {
     }
 
     fn helper_sort_k(mut actual: Vec<u64>, k: usize) -> usize {
+        let a_actual: Vec<_> = actual.iter().map(|x| Arc::new(Mutex::new(*x))).collect();
         let mut expected = actual.clone();
         expected.sort();
+        assert_ne!(actual, expected);
 
         let cmp = ClearComparator::<u64>::new();
-        let batcher = BatcherSort::new_k(k, cmp, true);
+        let batcher = BatcherSort::new_k(k, cmp, false);
         batcher.sort(&mut actual);
         assert_eq!(actual.split_at(k).0, expected.split_at(k).0);
+        let comparisons = batcher.comparisons();
 
-        batcher.comparisons()
+        let a_cmp = AsyncClearComparator::new_with_counter();
+        let a_batcher = BatcherSort::par_new_k(k, a_cmp, false);
+        a_batcher.par_sort(&a_actual);
+        let a_actual: Vec<_> = a_actual.into_iter().map(|x| *x.lock().unwrap()).collect();
+        assert_eq!(a_actual.split_at(k).0, expected.split_at(k).0);
+        assert_eq!(a_batcher.par_comparisons(), comparisons);
+
+        comparisons
     }
 
     #[test]
@@ -572,40 +587,17 @@ mod test {
     }
 
     #[quickcheck]
-    fn prop_sort(mut xs: Vec<usize>) -> TestResult {
+    fn prop_sort(xs: Vec<u64>) -> TestResult {
         if xs.len() > 20 {
             return TestResult::discard();
         }
-        let mut sorted = xs.clone();
-        sorted.sort();
-
-        let cmp = ClearComparator::<usize>::new();
-        let batcher = BatcherSort::new_k(xs.len(), cmp, false);
-        batcher.sort(&mut xs);
-
-        TestResult::from_bool(xs == sorted)
+        helper_sort(xs);
+        // TODO output Result from help_sort for quickcheck
+        TestResult::from_bool(true)
     }
 
     #[quickcheck]
-    fn prop_sort_async(xs: Vec<u64>) -> TestResult {
-        if xs.len() > 20 {
-            return TestResult::discard();
-        }
-        let mut sorted = xs.clone();
-        sorted.sort();
-
-        let a = AsyncClearComparator::new();
-        let batcher = BatcherSort::par_new_k(xs.len(), a, false);
-
-        let async_xs: Vec<_> = xs.into_iter().map(|x| Arc::new(Mutex::new(x))).collect();
-        batcher.par_sort(&async_xs);
-
-        let actual: Vec<_> = async_xs.into_iter().map(|x| *x.lock().unwrap()).collect();
-        TestResult::from_bool(actual == sorted)
-    }
-
-    #[quickcheck]
-    fn prop_sort_k(mut xs: Vec<u16>, k: usize) -> TestResult {
+    fn prop_sort_k(xs: Vec<u64>, k: usize) -> TestResult {
         if xs.len() > 20 {
             return TestResult::discard();
         }
@@ -614,47 +606,32 @@ mod test {
             return TestResult::discard();
         }
 
-        let mut sorted = xs.clone();
-        sorted.sort();
-
-        let cmp = ClearComparator::<u16>::new();
-        let batcher = BatcherSort::new_k(k, cmp, false);
-        batcher.sort(&mut xs);
-
-        TestResult::from_bool(xs.split_at(k).0 == sorted.split_at(k).0)
+        helper_sort_k(xs, k);
+        // TODO output Result from help_sort for quickcheck
+        TestResult::from_bool(true)
     }
 
     #[quickcheck]
-    fn prop_sort_k_5(mut xs: Vec<u16>) -> TestResult {
+    fn prop_sort_k_5(xs: Vec<u64>) -> TestResult {
         if xs.len() > 5000 || xs.is_empty() {
             return TestResult::discard();
         }
         let k = 5usize.min(xs.len());
 
-        let mut sorted = xs.clone();
-        sorted.sort();
-
-        let cmp = ClearComparator::<u16>::new();
-        let batcher = BatcherSort::new_k(k, cmp, false);
-        batcher.sort(&mut xs);
-
-        TestResult::from_bool(xs.split_at(k).0 == sorted.split_at(k).0)
+        helper_sort_k(xs, k);
+        // TODO output Result from help_sort for quickcheck
+        TestResult::from_bool(true)
     }
 
     #[quickcheck]
-    fn prop_sort_k_2(mut xs: Vec<u16>) -> TestResult {
+    fn prop_sort_k_2(xs: Vec<u64>) -> TestResult {
         if xs.len() > 5000 || xs.is_empty() {
             return TestResult::discard();
         }
         let k = 2usize.min(xs.len());
 
-        let mut sorted = xs.clone();
-        sorted.sort();
-
-        let cmp = ClearComparator::<u16>::new();
-        let batcher = BatcherSort::new_k(k, cmp, false);
-        batcher.sort(&mut xs);
-
-        TestResult::from_bool(xs.split_at(k).0 == sorted.split_at(k).0)
+        helper_sort_k(xs, k);
+        // TODO output Result from help_sort for quickcheck
+        TestResult::from_bool(true)
     }
 }
