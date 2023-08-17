@@ -583,7 +583,7 @@ pub fn setup_with_data(
 pub mod test {
     use super::*;
     use crate::batcher::BatcherSort;
-    use crate::{AsyncEncComparator, EncCmp};
+    use crate::{AsyncEncComparator, EncComparator};
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::{Arc, Mutex, RwLock};
@@ -802,7 +802,7 @@ pub mod test {
         {
             let pt_vec = vec![(1, 0), (0, 1), (2, 2), (3u64, 3u64)];
             let mut ct_vec = enc_vec(&pt_vec, &client.key);
-            let cmp = EncCmp::new(TEST_PARAM, server.clone());
+            let cmp = EncComparator::new(TEST_PARAM, server.clone());
             let sorter = BatcherSort::new_k(1, cmp, false);
             sorter.sort(&mut ct_vec);
 
@@ -817,7 +817,7 @@ pub mod test {
             let pt_vec = vec![(2, 0), (2, 1), (1, 2), (3u64, 3u64)];
             let mut ct_vec = enc_vec(&pt_vec, &client.key);
 
-            let cmp = EncCmp::new(TEST_PARAM, server.clone());
+            let cmp = EncComparator::new(TEST_PARAM, server.clone());
             let sorter = BatcherSort::new_k(1, cmp, false);
             sorter.sort(&mut ct_vec);
 
@@ -832,7 +832,7 @@ pub mod test {
             let pt_vec = vec![(1, 0), (2, 1), (3u64, 2u64), (0, 3)];
             let mut ct_vec = enc_vec(&pt_vec, &client.key);
 
-            let cmp = EncCmp::new(TEST_PARAM, server.clone());
+            let cmp = EncComparator::new(TEST_PARAM, server.clone());
             let sorter = BatcherSort::new_k(1, cmp, false);
             sorter.sort(&mut ct_vec);
 

@@ -49,12 +49,12 @@ pub trait Comparator {
     fn compare_count(&self) -> usize;
 }
 
-pub struct ClearCmp<T> {
+pub struct ClearComparator<T> {
     counter: Rc<RefCell<usize>>,
     item_type: PhantomData<T>,
 }
 
-impl<T: Ord + Clone> ClearCmp<T> {
+impl<T: Ord + Clone> ClearComparator<T> {
     /// Create a plaintext vector that implements `Comparator`.
     pub fn new() -> Self {
         Self {
@@ -64,13 +64,13 @@ impl<T: Ord + Clone> ClearCmp<T> {
     }
 }
 
-impl<T: Ord + Clone> Default for ClearCmp<T> {
+impl<T: Ord + Clone> Default for ClearComparator<T> {
     fn default() -> Self {
-        ClearCmp::new()
+        ClearComparator::new()
     }
 }
 
-impl<T: Ord + Clone> Comparator for ClearCmp<T> {
+impl<T: Ord + Clone> Comparator for ClearComparator<T> {
     type Item = T;
     type Aux = ();
 
@@ -108,13 +108,13 @@ impl EncItem {
     }
 }
 
-pub struct EncCmp {
+pub struct EncComparator {
     params: Parameters,
     server: Rc<RefCell<KnnServer>>,
     counter: Rc<RefCell<usize>>,
 }
 
-impl EncCmp {
+impl EncComparator {
     /// Create an encrypted vector that implements `Comparator`.
     /// A reference to `KnnServer` is needed because it has the cryptography context.
     /// The output is boxed.
@@ -127,7 +127,7 @@ impl EncCmp {
     }
 }
 
-impl Comparator for EncCmp {
+impl Comparator for EncComparator {
     type Item = EncItem;
     type Aux = ();
 
@@ -177,6 +177,7 @@ pub trait AsyncComparator: Sync + Send {
     type Item: Sync + Send;
     type Aux; // auxiliary information, e.g., FFT context
 
+    // TODO change API to match Comparator
     fn compare(&self, a: &Self::Item, b: &Self::Item);
     fn swap(&self, a: &Self::Item, b: &Self::Item);
     fn compare_count(&self) -> usize;

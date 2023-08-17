@@ -413,7 +413,7 @@ impl<CMP: AsyncComparator + Sync + Send> BatcherSort<CMP> {
 mod test {
     use super::*;
     use crate::comparator::AsyncClearComparator;
-    use crate::comparator::ClearCmp;
+    use crate::comparator::ClearComparator;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
     use std::sync::{Arc, Mutex};
@@ -423,7 +423,7 @@ mod test {
     }
 
     fn helper_merge_k(vs: &mut [i32], k: usize) -> usize {
-        let cmp = ClearCmp::<i32>::new();
+        let cmp = ClearComparator::<i32>::new();
         let batcher = BatcherSort::new_k(k, cmp, true);
         batcher.merge(vs);
         batcher.comparisons()
@@ -541,16 +541,16 @@ mod test {
         assert_eq!(10, comparisons);
     }
 
-    fn helper_sort(mut xs: Vec<i32>) -> usize {
+    fn helper_sort(xs: Vec<u64>) -> usize {
         let k = xs.len();
         helper_sort_k(xs, k)
     }
 
-    fn helper_sort_k(mut actual: Vec<i32>, k: usize) -> usize {
+    fn helper_sort_k(mut actual: Vec<u64>, k: usize) -> usize {
         let mut expected = actual.clone();
         expected.sort();
 
-        let cmp = ClearCmp::<i32>::new();
+        let cmp = ClearComparator::<u64>::new();
         let batcher = BatcherSort::new_k(k, cmp, true);
         batcher.sort(&mut actual);
         assert_eq!(actual.split_at(k).0, expected.split_at(k).0);
@@ -579,7 +579,7 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let cmp = ClearCmp::<usize>::new();
+        let cmp = ClearComparator::<usize>::new();
         let batcher = BatcherSort::new_k(xs.len(), cmp, false);
         batcher.sort(&mut xs);
 
@@ -617,7 +617,7 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let cmp = ClearCmp::<u16>::new();
+        let cmp = ClearComparator::<u16>::new();
         let batcher = BatcherSort::new_k(k, cmp, false);
         batcher.sort(&mut xs);
 
@@ -634,7 +634,7 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let cmp = ClearCmp::<u16>::new();
+        let cmp = ClearComparator::<u16>::new();
         let batcher = BatcherSort::new_k(k, cmp, false);
         batcher.sort(&mut xs);
 
@@ -651,7 +651,7 @@ mod test {
         let mut sorted = xs.clone();
         sorted.sort();
 
-        let cmp = ClearCmp::<u16>::new();
+        let cmp = ClearComparator::<u16>::new();
         let batcher = BatcherSort::new_k(k, cmp, false);
         batcher.sort(&mut xs);
 

@@ -1,4 +1,4 @@
-use crate::{BatcherSort, ClearCmp, ClearItem};
+use crate::{BatcherSort, ClearComparator, ClearItem};
 use rand::prelude::SliceRandom;
 use std::collections::HashMap;
 
@@ -117,7 +117,7 @@ pub fn run_knn(
         })
         .collect();
     let max_dist = distances.iter().map(|item| item.value).max().unwrap();
-    let cmp = ClearCmp::<ClearItem>::new();
+    let cmp = ClearComparator::<ClearItem>::new();
     let batcher = BatcherSort::new_k(k, cmp, false);
     batcher.sort(&mut distances);
     (distances[0..k].to_vec(), max_dist)

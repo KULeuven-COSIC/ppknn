@@ -187,7 +187,7 @@ fn simulate(
     }
 
     let dist_dur = server_start.elapsed().as_millis();
-    let cmp = EncCmp::new(params, server.clone());
+    let cmp = EncComparator::new(params, server.clone());
     let sorter = BatcherSort::new_k(k, cmp, false);
     sorter.sort(&mut distances_labels);
     let server_dur = server_start.elapsed().as_millis();
