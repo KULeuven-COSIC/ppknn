@@ -418,11 +418,11 @@ mod test {
     use quickcheck_macros::quickcheck;
     use std::sync::{Arc, Mutex};
 
-    fn test_merge(vs: &mut [i32]) -> usize {
-        test_merge_k(vs, vs.len())
+    fn helper_merge(vs: &mut [i32]) -> usize {
+        helper_merge_k(vs, vs.len())
     }
 
-    fn test_merge_k(vs: &mut [i32], k: usize) -> usize {
+    fn helper_merge_k(vs: &mut [i32], k: usize) -> usize {
         let cmp = ClearCmp::<i32>::new();
         let batcher = BatcherSort::new_k(k, cmp, true);
         batcher.merge(vs);
@@ -433,14 +433,14 @@ mod test {
     fn test_merge_2() {
         {
             let mut vs = vec![2, 1];
-            let comparisons = test_merge(&mut vs);
+            let comparisons = helper_merge(&mut vs);
             assert_eq!(vec![1, 2], vs);
             assert_eq!(1, comparisons);
         }
         {
             let k = 1;
             let mut vs = vec![2, 1];
-            let comparisons = test_merge_k(&mut vs, k);
+            let comparisons = helper_merge_k(&mut vs, k);
             assert_eq!(vec![1], vs.split_at(k).0);
             assert_eq!(1, comparisons);
         }
@@ -450,14 +450,14 @@ mod test {
     fn test_merge_3() {
         {
             let mut vs = vec![1, 5, 2];
-            let comparisons = test_merge(&mut vs);
+            let comparisons = helper_merge(&mut vs);
             assert_eq!(vec![1, 2, 5], vs);
             assert_eq!(2, comparisons);
         }
         {
             let mut vs = vec![2, 1, 5];
             let k = 1;
-            let comparisons = test_merge_k(&mut vs, k);
+            let comparisons = helper_merge_k(&mut vs, k);
             assert_eq!(vec![1], vs.split_at(k).0);
             assert_eq!(1, comparisons);
         }
@@ -467,14 +467,14 @@ mod test {
     fn test_merge_4() {
         {
             let mut vs = vec![1, 5, 2, 4];
-            let comparisons = test_merge(&mut vs);
+            let comparisons = helper_merge(&mut vs);
             assert_eq!(vec![1, 2, 4, 5], vs);
             assert_eq!(3, comparisons);
         }
         {
             let mut vs = vec![2, 5, 1, 4];
             let k = 1;
-            let comparisons = test_merge_k(&mut vs, k);
+            let comparisons = helper_merge_k(&mut vs, k);
             assert_eq!(vec![1], vs.split_at(k).0);
             assert_eq!(1, comparisons);
         }
@@ -483,7 +483,7 @@ mod test {
     #[test]
     fn test_merge_5() {
         let mut vs = vec![1, 5, 6, 2, 4];
-        let _ = test_merge(&mut vs);
+        let _ = helper_merge(&mut vs);
         assert_eq!(vec![1, 2, 4, 5, 6], vs);
     }
 
@@ -491,42 +491,42 @@ mod test {
     fn test_merge_8() {
         {
             let mut vs = vec![1, 5, 6, 7, 2, 3, 4, 5];
-            let comparisons = test_merge(&mut vs);
+            let comparisons = helper_merge(&mut vs);
             assert_eq!(vec![1, 2, 3, 4, 5, 5, 6, 7], vs);
             assert_eq!(9, comparisons);
         }
         {
             let mut vs = vec![1, 5, 6, 7, 2, 3, 4, 5];
             let k = 1;
-            let comparisons = test_merge_k(&mut vs, k);
+            let comparisons = helper_merge_k(&mut vs, k);
             assert_eq!(vec![1], vs.split_at(k).0);
             assert_eq!(1, comparisons);
         }
         {
             let mut vs = vec![1, 5, 6, 7, 2, 3, 4, 5];
             let k = 2;
-            let comparisons = test_merge_k(&mut vs, k);
+            let comparisons = helper_merge_k(&mut vs, k);
             assert_eq!(vec![1, 2], vs.split_at(k).0);
             assert_eq!(3, comparisons);
         }
         {
             let mut vs = vec![1, 5, 6, 7, 2, 3, 4, 5];
             let k = 4;
-            let comparisons = test_merge_k(&mut vs, k);
+            let comparisons = helper_merge_k(&mut vs, k);
             assert_eq!(vec![1, 2, 3, 4], vs.split_at(k).0);
             assert_eq!(8, comparisons);
         }
         {
             let mut vs = vec![1, 5, 6, 7, 2, 3, 4, 5];
             let k = 5;
-            let comparisons = test_merge_k(&mut vs, k);
+            let comparisons = helper_merge_k(&mut vs, k);
             assert_eq!(vec![1, 2, 3, 4, 5], vs.split_at(k).0);
             assert_eq!(8, comparisons);
         }
         {
             let mut vs = vec![1, 5, 6, 7, 2, 3, 4, 5];
             let k = 6;
-            let comparisons = test_merge_k(&mut vs, k);
+            let comparisons = helper_merge_k(&mut vs, k);
             assert_eq!(vec![1, 2, 3, 4, 5, 5], vs.split_at(k).0);
             assert_eq!(9, comparisons);
         }
@@ -536,66 +536,40 @@ mod test {
     fn test_merge_10() {
         let mut vs = vec![2, 4, 6, 8, 10, 1, 3, 5, 7, 9];
         let k = 5;
-        let comparisons = test_merge_k(&mut vs, k);
+        let comparisons = helper_merge_k(&mut vs, k);
         assert_eq!(vec![1, 2, 3, 4, 5], vs.split_at(k).0);
         assert_eq!(10, comparisons);
     }
 
-    /*
+    fn helper_sort(mut xs: Vec<i32>) -> usize {
+        let k = xs.len();
+        helper_sort_k(xs, k)
+    }
+
+    fn helper_sort_k(mut actual: Vec<i32>, k: usize) -> usize {
+        let mut expected = actual.clone();
+        expected.sort();
+
+        let cmp = ClearCmp::<i32>::new();
+        let batcher = BatcherSort::new_k(k, cmp, true);
+        batcher.sort(&mut actual);
+        assert_eq!(actual.split_at(k).0, expected.split_at(k).0);
+
+        batcher.comparisons()
+    }
+
     #[test]
     fn test_sort() {
-        {
-            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![5, 1, 6, 2]));
-            batcher.sort();
-            assert_eq!(vec![1, 2, 5, 6], batcher.inner());
-        }
-        {
-            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![5, 4, 3, 2, 1]));
-            batcher.sort();
-            assert_eq!(vec![1, 2, 3, 4, 5], batcher.inner());
-        }
-        {
-            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![7, 6, 5, 4, 3, 2, 1]));
-            batcher.sort();
-            assert_eq!(vec![1, 2, 3, 4, 5, 6, 7], batcher.inner());
-        }
-        {
-            let mut batcher = BatcherSort::new(ClearCmp::boxed(vec![1, 5, 6, 7, 2, 4, 3, 5]));
-            batcher.sort();
-            assert_eq!(vec![1, 2, 3, 4, 5, 5, 6, 7], batcher.inner());
-        }
-        {
-            let k = 1;
-            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![5, 1, 6, 7]), k);
-            batcher.sort();
-            assert_eq!(vec![1], batcher.vs.split_at(k).0);
-        }
-        {
-            let k = 2;
-            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; 4]), k);
-            batcher.sort();
-            assert_eq!(5, batcher.comparisons());
-        }
-        {
-            let k = 2;
-            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; 8]), k);
-            batcher.sort();
-            assert_eq!(13, batcher.comparisons());
-        }
-        {
-            let k = 2;
-            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; 16]), k);
-            batcher.sort();
-            assert_eq!(29, batcher.comparisons());
-        }
-        {
-            let k = 3;
-            let mut batcher = BatcherSort::new_k(ClearCmp::boxed(vec![0; 10]), k);
-            batcher.sort();
-            assert_eq!(20, batcher.comparisons());
-        }
+        helper_sort(vec![5, 1, 6, 2]);
+        helper_sort(vec![5, 4, 3, 2, 1]);
+        helper_sort(vec![7, 6, 5, 4, 3, 2, 1]);
+        helper_sort(vec![1, 5, 6, 7, 2, 4, 3, 5]);
+        helper_sort_k(vec![5, 1, 6, 7], 1);
+        assert_eq!(5, helper_sort_k(vec![0; 4], 2));
+        assert_eq!(13, helper_sort_k(vec![0; 8], 2));
+        assert_eq!(29, helper_sort_k(vec![0; 16], 2));
+        assert_eq!(20, helper_sort_k(vec![0; 10], 3));
     }
-     */
 
     #[quickcheck]
     fn prop_sort(mut xs: Vec<usize>) -> TestResult {
