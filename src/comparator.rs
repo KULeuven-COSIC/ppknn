@@ -183,6 +183,7 @@ pub trait AsyncComparator: Sync + Send {
     fn compare_count(&self) -> usize;
 }
 
+#[derive(Clone)]
 pub struct AsyncClearComparator {
     counter: Arc<Mutex<usize>>,
     do_count: bool,
@@ -242,6 +243,7 @@ impl AsyncComparator for AsyncClearComparator {
     }
 }
 
+#[derive(Clone)]
 pub struct AsyncEncComparator {
     server: Arc<RwLock<KnnServer>>,
     params: Parameters,
