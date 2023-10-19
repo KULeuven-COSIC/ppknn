@@ -27,7 +27,28 @@ impl TaskManager {
         unimplemented!()
     }
 
+    // we need to be careful for situations such as
+    // processing: (0, 1)
+    // remaining: (1, 2) (2, 3)
+    // since we skip (1, 2) as it conflicts with (0, 1)
+    // but we should not accept (2, 3) since it depends on (1, 2)
+    fn conflict_with_processing(&self, task: &Task) -> bool {
+        // for t in self.processing.iter() {
+        //     // tasks on the same level should never conflict
+        //     if task.level == t.level {
+        //         continue
+        //     }
+        //
+        //     // tasks on different levels
+        // }
+        // true
+        unimplemented!()
+    }
+
     /// Output the next task in the queue.
+    /// There are a few steps for finding the next task when one is finished
+    /// - take `finished_task` out of `self.processing`
+    /// - find the next task that does not "conflict" with any current tasks
     fn next_task(&mut self, finished_task: Task) -> TaskState {
         unimplemented!()
     }
@@ -35,7 +56,20 @@ impl TaskManager {
     /// Output the initial tasks,
     /// i.e., tasks that have no dependency at level 0
     fn initial_tasks(&mut self) -> Vec<Task> {
-        unimplemented!()
+        // we need at least one comparator at level 0
+        assert_eq!(self.remaining[0].level, 0);
+        let mut i = 0usize;
+        loop {
+            if self.remaining.is_empty() {
+                break;
+            }
+            if self.remaining[i].level == 0 {
+                i += 1;
+            } else {
+                break
+            }
+        }
+        self.remaining.drain(0..i).collect()
     }
 }
 
