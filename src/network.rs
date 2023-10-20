@@ -153,17 +153,21 @@ where
             pool_tx.send(Some(task)).unwrap();
         }
 
-        // if there are more threads than initial tasks
-        // try to send those too
-        if n_threads > man.processing.len() {
-            // TODO
-        }
+        // even if there are more threads than initial tasks
+        // we cannot send more since the initial tasks on level 0
+        // always conflicts with tasks on level 1
 
         // listen to job completion and figure out the next tasks
+        let mut done = false;
         loop {
+            if done && man.processing.is_empty() {
+                return;
+            }
+
             let finished_task = man_rx.recv().unwrap();
             match man.next_task(finished_task) {
                 TaskState::Ok(task) => {
+                    assert!(!done);
                     pool_tx.send(Some(task)).unwrap();
                 }
                 TaskState::Blocked => {
@@ -172,8 +176,12 @@ where
                     // and hopefully it'll be unblocked.
                 }
                 TaskState::Done => {
-                    pool_tx.send(None).unwrap();
-                    return;
+                    if !done {
+                        // we only need to send the None signal once
+                        // for the threadpool to stop receiving tasks
+                        pool_tx.send(None).unwrap();
+                        done = true;
+                    }
                 }
             }
         }
@@ -184,33 +192,33 @@ where
         .num_threads(n_threads)
         .build()
         .unwrap();
-    pool.install(move || {
-        loop {
-            match pool_rx.recv().unwrap() {
-                None => break,
-                Some(task) => {
-                    // perform the task in the thread pool
-                    let man_tx = man_tx.clone();
-                    let cmp = cmp.clone();
-                    rayon::scope(move |s| {
-                        s.spawn(move |_| {
-                            // do work
-                            cmp.compare(&vs[task.v0], &vs[task.v1]);
-                            // send the manager a message when the task is done
-                            man_tx.send(task).unwrap();
-                        });
+    loop {
+        match pool_rx.recv().unwrap() {
+            None => break,
+            Some(task) => {
+                // perform the task in the thread pool
+                let man_tx = man_tx.clone();
+                let cmp = cmp.clone();
+                pool.scope(move |s| {
+                    s.spawn(move |_| {
+                        // do work
+                        cmp.compare(&vs[task.v0], &vs[task.v1]);
+                        // send the manager a message when the task is done
+                        man_tx.send(task).unwrap();
                     });
-                }
+                });
             }
         }
-    });
-
+    }
     man_handler.join().unwrap();
-    // pool.join();
 }
 
 #[cfg(test)]
 mod test {
+    use std::sync::{Arc, Mutex};
+
+    use crate::AsyncClearComparator;
+
     use super::*;
 
     #[test]
@@ -233,5 +241,19 @@ mod test {
 
         // finally we should receive done after the last task is completed
         assert_eq!(TaskState::Done, man.next_task(Task::new(1, 2, 1)));
+        assert!(man.processing.is_empty());
+        assert!(man.remaining.is_empty());
+    }
+
+    #[test]
+    fn test_thread_pool_basic() {
+        let cmp = AsyncClearComparator::new();
+        let network = vec![Task::new(0, 1, 0), Task::new(1, 2, 1)];
+        let actual = vec![5, 1, 6];
+
+        let a_actual: Vec<_> = actual.iter().map(|x| Arc::new(Mutex::new(*x))).collect();
+        do_work(2, &network, cmp, &a_actual);
+        let a_actual: Vec<_> = a_actual.into_iter().map(|x| *x.lock().unwrap()).collect();
+        assert_eq!(vec![1, 5, 6], a_actual);
     }
 }
