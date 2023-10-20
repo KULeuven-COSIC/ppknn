@@ -1,5 +1,6 @@
 use crate::AsyncComparator;
 use rayon;
+use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
 
@@ -213,9 +214,51 @@ where
     man_handler.join().unwrap();
 }
 
+pub fn load_network(path: &Path) -> std::io::Result<Vec<Task>> {
+    let mut out: Vec<Task> = vec![];
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b',')
+        .has_headers(false)
+        .trim(csv::Trim::All)
+        .from_path(path)?;
+    for result in rdr.records() {
+        let record = result?;
+        // TODO better error handling
+        let v0 = record.get(0).unwrap().parse::<usize>().unwrap();
+        let v1 = record.get(1).unwrap().parse::<usize>().unwrap();
+
+        // find the previous records in out and see if there are conflicts
+        let current_level = match out.last() {
+            Some(t) => t.level,
+            None => 0,
+        };
+        let mut conflict = false;
+        for t in out.iter().rev() {
+            if t.level < current_level {
+                break;
+            }
+            if t.v0 == v0 || t.v0 == v1 || t.v1 == v0 || t.v1 == v1 {
+                conflict = true;
+                break;
+            }
+        }
+
+        // if there is a conflict then increment the level
+        if conflict {
+            out.push(Task::new(v0, v1, current_level + 1));
+        } else {
+            out.push(Task::new(v0, v1, current_level));
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod test {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        path::PathBuf,
+        sync::{Arc, Mutex},
+    };
 
     use crate::AsyncClearComparator;
 
@@ -255,5 +298,30 @@ mod test {
         do_work(2, &network, cmp, &a_actual);
         let a_actual: Vec<_> = a_actual.into_iter().map(|x| *x.lock().unwrap()).collect();
         assert_eq!(vec![1, 5, 6], a_actual);
+    }
+
+    #[test]
+    fn test_load_network() {
+        let d: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data"].iter().collect();
+        {
+            let mut d = d.clone();
+            d.push("test_network1.csv");
+            let network = load_network(d.as_path()).unwrap();
+            assert_eq!(network.len(), 4);
+            assert_eq!(network[0], Task::new(0, 1, 0));
+            assert_eq!(network[1], Task::new(1, 2, 1));
+            assert_eq!(network[2], Task::new(2, 3, 2));
+            assert_eq!(network[3], Task::new(3, 4, 3));
+        }
+        {
+            let mut d = d.clone();
+            d.push("test_network2.csv");
+            let network = load_network(d.as_path()).unwrap();
+            assert_eq!(network.len(), 4);
+            assert_eq!(network[0], Task::new(0, 1, 0));
+            assert_eq!(network[1], Task::new(2, 3, 0));
+            assert_eq!(network[2], Task::new(4, 5, 0));
+            assert_eq!(network[3], Task::new(6, 7, 0));
+        }
     }
 }
