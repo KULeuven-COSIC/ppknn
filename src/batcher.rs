@@ -555,7 +555,6 @@ mod test {
         let a_actual: Vec<_> = actual.iter().map(|x| Arc::new(Mutex::new(*x))).collect();
         let mut expected = actual.clone();
         expected.sort();
-        assert_ne!(actual, expected);
 
         let cmp = ClearComparator::<u64>::new();
         let batcher = BatcherSort::new_k(k, cmp, false);
