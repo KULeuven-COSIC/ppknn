@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ppknn::server::setup_with_data;
@@ -63,8 +64,13 @@ fn network_bench(c: &mut Criterion) {
     let a_actual: Vec<_> = actual.map(|x| Arc::new(Mutex::new(x))).collect();
 
     for n_threads in [1, 2].iter() {
-        c.bench_with_input(
-            BenchmarkId::new("enc network", n_threads),
+        let mut group = c.benchmark_group("enc network");
+        group
+            .sample_size(10)
+            .measurement_time(Duration::from_secs(20))
+            .warm_up_time(Duration::from_secs(5));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(n_threads),
             &n_threads,
             |b, &t| {
                 b.iter(|| {
