@@ -210,8 +210,8 @@ def print_network(file, d, k, sorted_solutions, best_solutions, method="BEST", w
 
 
 # Some tests to find out which method is the best
-d = 1000
-k = 50
+d = 100
+k = 5
 print("Yao's method:", count_yao_comparators(d, k))
 print("Our method:", count_our_comparators(d, k))
 print("Tournament method:", count_tournament_comparators(d, k))

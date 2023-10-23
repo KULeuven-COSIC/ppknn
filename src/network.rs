@@ -46,6 +46,10 @@ impl TaskManager {
     // To avoid this, we will only accept tasks that are 1 level higher
     // than the tasks in `self.processing`
     fn conflict_with_processing(&self, task: &Task) -> bool {
+        if self.processing.is_empty() {
+            return false;
+        }
+
         let mut max_level = 0;
         for t in self.processing.iter() {
             if max_level < t.level {
@@ -110,12 +114,13 @@ impl TaskManager {
                 return TaskState::Ok(t);
             }
         }
+
         return TaskState::Blocked;
     }
 
     /// Output the initial tasks,
     /// i.e., tasks that have no dependency at level 0
-    fn initial_tasks(&mut self) -> Vec<Task> {
+    fn initial_tasks(&mut self, n_threads: usize) -> Vec<Task> {
         // we need at least one comparator at level 0
         assert_eq!(self.remaining[0].level, 0);
         // we must be at the start of the tasks
@@ -124,6 +129,9 @@ impl TaskManager {
         let mut i = 0usize;
         loop {
             if self.remaining.is_empty() {
+                break;
+            }
+            if i >= n_threads {
                 break;
             }
             if self.remaining[i].level == 0 {
@@ -150,7 +158,7 @@ where
     // start a thread for manager
     let man_handler = thread::spawn(move || {
         // send the initial tasks
-        for task in man.initial_tasks() {
+        for task in man.initial_tasks(n_threads) {
             pool_tx.send(Some(task)).unwrap();
         }
 
@@ -162,11 +170,14 @@ where
         let mut done = false;
         loop {
             if done && man.processing.is_empty() {
+                // println!("done");
                 return;
             }
 
             let finished_task = man_rx.recv().unwrap();
-            match man.next_task(finished_task) {
+            let next = man.next_task(finished_task);
+            // println!("done: {:?}, next: {:?}", finished_task, next);
+            match next {
                 TaskState::Ok(task) => {
                     assert!(!done);
                     pool_tx.send(Some(task)).unwrap();
@@ -260,6 +271,8 @@ mod test {
         sync::{Arc, Mutex},
     };
 
+    use rand::Rng;
+
     use crate::AsyncClearComparator;
 
     use super::*;
@@ -270,7 +283,8 @@ mod test {
         let mut man = TaskManager::new(&network);
 
         // check the initial task
-        assert_eq!(man.initial_tasks(), vec![Task::new(0, 1, 0)]);
+        // even if there are 2 threads, only spawn one since the rest have higher level
+        assert_eq!(man.initial_tasks(2), vec![Task::new(0, 1, 0)]);
 
         // now we have one tasks in processing and it conflicts
         assert!(man.conflict_with_processing(&Task::new(1, 2, 1)));
@@ -323,5 +337,39 @@ mod test {
             assert_eq!(network[2], Task::new(4, 5, 0));
             assert_eq!(network[3], Task::new(6, 7, 0));
         }
+    }
+
+    fn test_network(d: usize, k: usize, n_threads: usize) {
+        let pb: PathBuf = [
+            env!("CARGO_MANIFEST_DIR"),
+            "data",
+            &format!("network-{}-{}.csv", d, k),
+        ]
+        .iter()
+        .collect();
+        let network = load_network(pb.as_path()).unwrap();
+
+        let cmp = AsyncClearComparator::new();
+        let mut rng = rand::thread_rng();
+        let actual: Vec<_> = (0..d).map(|_| rng.gen::<u64>()).collect();
+        let a_actual: Vec<_> = actual.iter().map(|x| Arc::new(Mutex::new(*x))).collect();
+        do_work(n_threads, &network, cmp, &a_actual);
+        let a_actual: Vec<_> = a_actual.into_iter().map(|x| *x.lock().unwrap()).collect();
+
+        // find the largest of the first k values
+        // then check that everything else is larger or equal
+        let (left, right) = a_actual.split_at(k);
+        let left_max = left.iter().max().unwrap();
+        assert!(right.iter().all(|r| { r >= left_max }));
+    }
+
+    #[test]
+    fn test_network_100_5() {
+        test_network(100, 5, 2)
+    }
+
+    #[test]
+    fn test_network_1000_50() {
+        test_network(1000, 50, 2)
     }
 }
