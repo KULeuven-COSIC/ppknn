@@ -210,8 +210,8 @@ def print_network(file, d, k, sorted_solutions, best_solutions, method="BEST", w
 
 
 # Some tests to find out which method is the best
-d = 100
-k = 5
+d = 20
+k = 3
 print("Yao's method:", count_yao_comparators(d, k))
 print("Our method:", count_our_comparators(d, k))
 print("Tournament method:", count_tournament_comparators(d, k))
@@ -220,5 +220,5 @@ sorted_solutions = dict()
 best_solutions = dict()
 print("Best method:", count_best_comparators(d, k, sorted_solutions, best_solutions))
 
-with open("../data/network.csv", "w") as file:
+with open("../data/network-{}-{}.csv".format(d, k), "w") as file:
     print_network(file, d, k, sorted_solutions, best_solutions)
