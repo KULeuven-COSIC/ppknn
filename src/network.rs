@@ -1,5 +1,6 @@
 use crate::AsyncComparator;
 use rayon;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
@@ -232,34 +233,42 @@ pub fn load_network(path: &Path) -> std::io::Result<Vec<Task>> {
         .has_headers(false)
         .trim(csv::Trim::All)
         .from_path(path)?;
+
+    // TODO figure out capacity
+    let mut level_map: HashMap<usize, usize> = HashMap::new();
     for result in rdr.records() {
         let record = result?;
         // TODO better error handling
         let v0 = record.get(0).unwrap().parse::<usize>().unwrap();
         let v1 = record.get(1).unwrap().parse::<usize>().unwrap();
 
-        // find the previous records in out and see if there are conflicts
-        let current_level = match out.last() {
-            Some(t) => t.level,
-            None => 0,
+        // find the level for which a conflict exists
+        let level_0 = level_map.get(&v0).map(|x| *x);
+        let level_1 = level_map.get(&v1).map(|x| *x);
+        let level = match (level_0, level_1) {
+            (None, None) => {
+                level_map.insert(v0, 0);
+                level_map.insert(v1, 0);
+                0
+            }
+            (None, Some(x)) => {
+                level_map.insert(v0, x + 1);
+                level_map.insert(v1, x + 1);
+                x + 1
+            }
+            (Some(x), None) => {
+                level_map.insert(v0, x + 1);
+                level_map.insert(v1, x + 1);
+                x + 1
+            }
+            (Some(x), Some(y)) => {
+                let z = x.max(y);
+                level_map.insert(v0, z + 1);
+                level_map.insert(v1, z + 1);
+                z + 1
+            }
         };
-        let mut conflict = false;
-        for t in out.iter().rev() {
-            if t.level < current_level {
-                break;
-            }
-            if t.v0 == v0 || t.v0 == v1 || t.v1 == v0 || t.v1 == v1 {
-                conflict = true;
-                break;
-            }
-        }
-
-        // if there is a conflict then increment the level
-        if conflict {
-            out.push(Task::new(v0, v1, current_level + 1));
-        } else {
-            out.push(Task::new(v0, v1, current_level));
-        }
+        out.push(Task::new(v0, v1, level));
     }
     Ok(out)
 }
@@ -336,6 +345,16 @@ mod test {
             assert_eq!(network[1], Task::new(2, 3, 0));
             assert_eq!(network[2], Task::new(4, 5, 0));
             assert_eq!(network[3], Task::new(6, 7, 0));
+        }
+        {
+            let mut d = d.clone();
+            d.push("test_network3.csv");
+            let network = load_network(d.as_path()).unwrap();
+            assert_eq!(network.len(), 4);
+            assert_eq!(network[0], Task::new(0, 1, 0));
+            assert_eq!(network[1], Task::new(1, 2, 1));
+            assert_eq!(network[2], Task::new(2, 3, 2));
+            assert_eq!(network[3], Task::new(0, 4, 1));
         }
     }
 
