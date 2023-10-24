@@ -270,6 +270,7 @@ pub fn load_network(path: &Path) -> std::io::Result<Vec<Task>> {
         };
         out.push(Task::new(v0, v1, level));
     }
+    out.sort_by(|x, y| x.level.cmp(&y.level));
     Ok(out)
 }
 
@@ -352,9 +353,10 @@ mod test {
             let network = load_network(d.as_path()).unwrap();
             assert_eq!(network.len(), 4);
             assert_eq!(network[0], Task::new(0, 1, 0));
+            // the order of network[1] and network[2] don't matter
             assert_eq!(network[1], Task::new(1, 2, 1));
-            assert_eq!(network[2], Task::new(2, 3, 2));
-            assert_eq!(network[3], Task::new(0, 4, 1));
+            assert_eq!(network[2], Task::new(0, 4, 1));
+            assert_eq!(network[3], Task::new(2, 3, 2));
         }
     }
 
