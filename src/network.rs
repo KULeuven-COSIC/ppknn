@@ -205,24 +205,24 @@ where
         .num_threads(n_threads)
         .build()
         .unwrap();
-    loop {
-        match pool_rx.recv().unwrap() {
-            None => break,
-            Some(task) => {
-                // perform the task in the thread pool
-                let man_tx = man_tx.clone();
-                let cmp = cmp.clone();
-                pool.scope(move |s| {
+    pool.scope(move |s| {
+        loop {
+            match pool_rx.recv().unwrap() {
+                None => return,
+                Some(task) => {
+                    // perform the task in the thread pool
+                    let man_tx = man_tx.clone();
+                    let cmp = cmp.clone();
                     s.spawn(move |_| {
                         // do work
                         cmp.compare(&vs[task.v0], &vs[task.v1]);
                         // send the manager a message when the task is done
                         man_tx.send(task).unwrap();
                     });
-                });
+                }
             }
         }
-    }
+    });
     man_handler.join().unwrap();
 }
 
