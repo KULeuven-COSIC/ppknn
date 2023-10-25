@@ -36,7 +36,7 @@ fn ks_benchmark(c: &mut Criterion) {
 }
 
 fn network_bench(c: &mut Criterion) {
-    let d = 8usize;
+    let d = 16usize;
     // let k = 1usize;
     let pb: PathBuf = [
         env!("CARGO_MANIFEST_DIR"),
