@@ -1,5 +1,6 @@
 use crate::AsyncComparator;
 use rayon;
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc;
@@ -146,7 +147,35 @@ impl TaskManager {
     }
 }
 
-pub fn do_work<CMP>(n_threads: usize, network: &[Task], cmp: CMP, vs: &[CMP::Item])
+pub fn par_run_network_trivial<CMP>(network: &[Task], cmp: CMP, vs: &[CMP::Item])
+where
+    CMP: AsyncComparator + Sync + Send + Clone,
+{
+    let mut grouped_network = vec![];
+    let mut current_level = 0usize;
+    let mut task_i = 0usize;
+    while task_i < network.len() {
+        let mut tmp = vec![];
+        while current_level == network[task_i].level {
+            tmp.push(network[task_i]);
+            task_i += 1;
+            if task_i >= network.len() {
+                break;
+            }
+        }
+        grouped_network.push(tmp);
+        current_level += 1;
+    }
+
+    // println!("{:?}", grouped_network);
+    for tasks in grouped_network {
+        tasks.par_iter().for_each(|task| {
+            cmp.compare(&vs[task.v0], &vs[task.v1]);
+        });
+    }
+}
+
+pub fn par_run_network<CMP>(network: &[Task], cmp: CMP, vs: &[CMP::Item])
 where
     CMP: AsyncComparator + Sync + Send + Clone,
 {
@@ -159,7 +188,8 @@ where
     // start a thread for manager
     let man_handler = thread::spawn(move || {
         // send the initial tasks
-        for task in man.initial_tasks(n_threads) {
+        for task in man.initial_tasks(rayon::current_num_threads()) {
+            // println!("sent task");
             pool_tx.send(Some(task)).unwrap();
         }
 
@@ -201,15 +231,12 @@ where
     });
 
     // start the thread pool
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(n_threads)
-        .build()
-        .unwrap();
-    pool.scope(move |s| {
+    rayon::scope(move |s| {
         loop {
             match pool_rx.recv().unwrap() {
                 None => return,
                 Some(task) => {
+                    // println!("got task");
                     // perform the task in the thread pool
                     let man_tx = man_tx.clone();
                     let cmp = cmp.clone();
@@ -221,6 +248,7 @@ where
                     });
                 }
             }
+            // println!("spawned");
         }
     });
     man_handler.join().unwrap();
@@ -319,7 +347,7 @@ mod test {
         let actual = vec![5, 1, 6];
 
         let a_actual: Vec<_> = actual.iter().map(|x| Arc::new(Mutex::new(*x))).collect();
-        do_work(2, &network, cmp, &a_actual);
+        par_run_network(&network, cmp, &a_actual);
         let a_actual: Vec<_> = a_actual.into_iter().map(|x| *x.lock().unwrap()).collect();
         assert_eq!(vec![1, 5, 6], a_actual);
     }
@@ -360,7 +388,7 @@ mod test {
         }
     }
 
-    fn test_network(d: usize, k: usize, n_threads: usize) {
+    fn test_network(d: usize, k: usize, trivial: bool) {
         let pb: PathBuf = [
             env!("CARGO_MANIFEST_DIR"),
             "data",
@@ -374,7 +402,11 @@ mod test {
         let mut rng = rand::thread_rng();
         let actual: Vec<_> = (0..d).map(|_| rng.gen::<u64>()).collect();
         let a_actual: Vec<_> = actual.iter().map(|x| Arc::new(Mutex::new(*x))).collect();
-        do_work(n_threads, &network, cmp, &a_actual);
+        if trivial {
+            par_run_network_trivial(&network, cmp, &a_actual);
+        } else {
+            par_run_network(&network, cmp, &a_actual);
+        }
         let a_actual: Vec<_> = a_actual.into_iter().map(|x| *x.lock().unwrap()).collect();
 
         // find the largest of the first k values
@@ -385,12 +417,26 @@ mod test {
     }
 
     #[test]
+    fn test_network_10_1() {
+        test_network(10, 1, true);
+        test_network(10, 1, false);
+    }
+
+    #[test]
+    fn test_network_20_3() {
+        test_network(20, 3, true);
+        test_network(20, 3, false);
+    }
+
+    #[test]
     fn test_network_100_5() {
-        test_network(100, 5, 2)
+        test_network(100, 5, true);
+        test_network(100, 5, false);
     }
 
     #[test]
     fn test_network_1000_50() {
-        test_network(1000, 50, 2)
+        test_network(1000, 50, true);
+        test_network(1000, 50, false);
     }
 }

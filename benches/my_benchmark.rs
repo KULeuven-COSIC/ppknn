@@ -37,12 +37,13 @@ fn ks_benchmark(c: &mut Criterion) {
 }
 
 fn network_bench(c: &mut Criterion) {
-    let d = 20usize;
-    let k = 3usize;
+    let d = 8usize;
+    // let k = 1usize;
     let pb: PathBuf = [
         env!("CARGO_MANIFEST_DIR"),
         "data",
-        &format!("network-{}-{}.csv", d, k),
+        // &format!("network-{}-{}.csv", d, k),
+        "test_network4.csv",
     ]
     .iter()
     .collect();
@@ -63,22 +64,11 @@ fn network_bench(c: &mut Criterion) {
     });
     let a_actual: Vec<_> = actual.map(|x| Arc::new(Mutex::new(x))).collect();
 
-    for n_threads in [1, 2].iter() {
-        let mut group = c.benchmark_group("enc network");
-        group
-            .sample_size(10)
-            .measurement_time(Duration::from_secs(20))
-            .warm_up_time(Duration::from_secs(5));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(n_threads),
-            &n_threads,
-            |b, &t| {
-                b.iter(|| {
-                    do_work(*t, &network, cmp.clone(), &a_actual);
-                });
-            },
-        );
-    }
+    c.bench_function("enc network", |b| {
+        b.iter(|| {
+            par_run_network(&network, cmp.clone(), &a_actual);
+        });
+    });
 }
 
 criterion_group!(benches, pbs_benchmark, ks_benchmark, network_bench);
