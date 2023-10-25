@@ -188,7 +188,9 @@ where
     // start a thread for manager
     let man_handler = thread::spawn(move || {
         // send the initial tasks
-        for task in man.initial_tasks(rayon::current_num_threads()) {
+        // note that only current_num_threads-1 threads are used as
+        // worker threads, so we should send current_num_threads-1 tasks initially
+        for task in man.initial_tasks(rayon::current_num_threads() - 1) {
             // println!("sent task");
             pool_tx.send(Some(task)).unwrap();
         }
