@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use ppknn::server::setup_with_data;
 use ppknn::{network::*, AsyncEncComparator, EncItem};
 use tfhe::shortint::prelude::*;
@@ -63,6 +62,12 @@ fn network_bench(c: &mut Criterion) {
         )
     });
     let a_actual: Vec<_> = actual.map(|x| Arc::new(Mutex::new(x))).collect();
+
+    c.bench_function("enc trivial network", |b| {
+        b.iter(|| {
+            par_run_network_trivial(&network, cmp.clone(), &a_actual);
+        });
+    });
 
     c.bench_function("enc network", |b| {
         b.iter(|| {
