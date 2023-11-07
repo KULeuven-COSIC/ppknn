@@ -44,6 +44,8 @@ def count_yao_comparators(d, k):
         return 0
     elif k == 1 or k == d - 1:
         return d - 1
+    elif k == 2:
+        return 2 * d - 4
     else:
         return count_yao_comparators(d // 2, k // 2) +\
                count_yao_comparators((d // 2) + (d % 2) + (k // 2), k) + (d // 2)
@@ -90,6 +92,8 @@ def count_best_comparators(d, k, sorted_solutions, best_solutions):
         # Yao's method
         if k == 1 or k == d - 1:
             nb3 = d - 1
+        elif k == 2:
+            nb3 = 2 * d - 4
         else:
             nb3 = count_best_comparators(d // 2, k // 2, sorted_solutions, best_solutions) +\
                   count_best_comparators((d // 2) + (d % 2) + (k // 2), k, sorted_solutions, best_solutions) + (d // 2)
@@ -174,6 +178,8 @@ def print_network(file, d, k, sorted_solutions, best_solutions, method="BEST", w
             nb3 = 0
         elif k == 1 or k == d - 1:
             nb3 = d - 1
+        elif k == 2:
+            nb3 = 2 * d - 4
         else:
             nb3 = count_best_comparators(d // 2, k // 2, sorted_solutions, best_solutions) +\
                   count_best_comparators((d // 2) + (d % 2) + (k // 2), k, sorted_solutions, best_solutions) + (d // 2)
@@ -200,6 +206,10 @@ def print_network(file, d, k, sorted_solutions, best_solutions, method="BEST", w
                 print_tournament_comparators(file, wires)
             elif k == d - 1:
                 print_tournament_comparators(file, wires, True)
+            elif k == 2:
+                for index in range(2, len(wires)):
+                    print_comparator(file, wires[0], wires[index])
+                    print_comparator(file, wires[1], wires[index])
             else:
                 print_yao_comparators(file, wires)
                 wires1 = [wires[(d // 2) + (d % 2) + index] for index in range(d // 2)]
@@ -210,8 +220,8 @@ def print_network(file, d, k, sorted_solutions, best_solutions, method="BEST", w
 
 
 # Some tests to find out which method is the best
-d = 20
-k = 3
+d = 1000
+k = 50
 print("Yao's method:", count_yao_comparators(d, k))
 print("Our method:", count_our_comparators(d, k))
 print("Tournament method:", count_tournament_comparators(d, k))
