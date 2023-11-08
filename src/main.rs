@@ -1,9 +1,12 @@
 use clap::{Parser, ValueEnum};
+use ppknn::network::*;
 use ppknn::*;
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs;
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use tfhe::shortint::prelude::*;
 
@@ -223,6 +226,59 @@ fn simulate(
         .collect();
 
     let first_noise = client.lwe_noise(&distances_labels[0].value, decrypted_k[0].0);
+    (decrypted_k, dist_dur, server_dur, comparisons, first_noise)
+}
+
+fn simulate_new(
+    params: Parameters,
+    client: &mut KnnClient,
+    server: Arc<RwLock<KnnServer>>,
+    k: usize,
+    target: &[u64],
+    verbose: bool,
+) -> (Vec<(u64, u64)>, u128, u128, usize, f64) {
+    let (glwe, lwe) = client.make_query(target);
+
+    let server_start = Instant::now();
+    let distances_labels: Vec<Arc<Mutex<_>>> = server
+        .read()
+        .unwrap()
+        .compute_distances_with_labels(&glwe, &lwe)
+        .into_iter()
+        .map(|l| Arc::new(Mutex::new(l)))
+        .collect();
+
+    if verbose {
+        let distances: Vec<_> = distances_labels
+            .iter()
+            .take(10)
+            .map(|item| {
+                let value = client.key.decrypt(&item.lock().unwrap().value);
+                let class = client.key.decrypt(&item.lock().unwrap().class);
+                (value, class)
+            })
+            .collect();
+        println!("[DEBUG] decrypted_distances_top10={distances:?}");
+    }
+
+    let mut d: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data"].iter().collect();
+    d.push(format!("network-{}-{}.csv", distances_labels.len(), k));
+    let network = load_network(&d).unwrap();
+    let cmp = AsyncEncComparator::new(server, params);
+
+    let dist_dur = server_start.elapsed().as_millis();
+    par_run_network_trivial(&network, cmp, &distances_labels);
+
+    let server_dur = server_start.elapsed().as_millis();
+    let comparisons = network.len();
+
+    let decrypted_k: Vec<_> = distances_labels[..k]
+        .iter()
+        .map(|ct| ct.lock().unwrap().decrypt(&client.key))
+        .collect();
+
+    let first_noise =
+        client.lwe_noise(&distances_labels[0].lock().unwrap().value, decrypted_k[0].0);
     (decrypted_k, dist_dur, server_dur, comparisons, first_noise)
 }
 
