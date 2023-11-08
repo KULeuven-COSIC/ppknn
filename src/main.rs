@@ -32,6 +32,27 @@ impl Debug for QuantizeType {
     }
 }
 
+#[derive(ValueEnum, Clone, Copy)]
+enum NetworkType {
+    Normal,
+    File,
+}
+
+impl Display for NetworkType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NetworkType::Normal => write!(f, "normal"),
+            NetworkType::File => write!(f, "file"),
+        }
+    }
+}
+
+impl Debug for NetworkType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[clap(author, version, about="Privacy preserving k nearest neighbour", long_about = None)]
 struct Cli {
@@ -60,6 +81,9 @@ struct Cli {
 
     #[clap(long, default_value_t = QuantizeType::None)]
     quantize_type: QuantizeType,
+
+    #[clap(long, default_value_t = NetworkType::Normal)]
+    network_type: NetworkType,
 
     #[clap(long, default_value_t = false, help = "attempt to find the best model")]
     best_model: bool,
