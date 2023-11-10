@@ -260,6 +260,15 @@ impl AsyncEncComparator {
             do_count: false,
         }
     }
+
+    pub fn new_with_counter(server: Arc<RwLock<KnnServer>>, params: Parameters) -> Self {
+        Self {
+            server,
+            params,
+            counter: Arc::new(Mutex::new(0)),
+            do_count: true,
+        }
+    }
 }
 
 impl AsyncComparator for AsyncEncComparator {

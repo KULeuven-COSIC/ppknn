@@ -1,11 +1,9 @@
 use clap::{Parser, ValueEnum};
 use ppknn::network::*;
 use ppknn::*;
-use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use tfhe::shortint::prelude::*;
@@ -172,7 +170,7 @@ fn setup_simulation(
     model_vec: &[Vec<u64>],
     labels: &[u64],
     initial_modulus: u64,
-) -> (KnnClient, Rc<RefCell<KnnServer>>) {
+) -> (KnnClient, Arc<RwLock<KnnServer>>) {
     let (client, server) = setup_with_data(
         params,
         model_vec,
@@ -183,59 +181,18 @@ fn setup_simulation(
             initial_modulus
         },
     );
-    let server = Rc::new(RefCell::new(server));
+    let server = Arc::new(RwLock::new(server));
     (client, server)
 }
 
 fn simulate(
     params: Parameters,
     client: &mut KnnClient,
-    server: Rc<RefCell<KnnServer>>,
-    k: usize,
-    target: &[u64],
-    verbose: bool,
-) -> (Vec<(u64, u64)>, u128, u128, usize, f64) {
-    let (glwe, lwe) = client.make_query(target);
-
-    let server_start = Instant::now();
-    let mut distances_labels = server.borrow().compute_distances_with_labels(&glwe, &lwe);
-
-    if verbose {
-        let distances: Vec<_> = distances_labels
-            .iter()
-            .take(10)
-            .map(|item| {
-                let value = client.key.decrypt(&item.value);
-                let class = client.key.decrypt(&item.class);
-                (value, class)
-            })
-            .collect();
-        println!("[DEBUG] decrypted_distances_top10={distances:?}");
-    }
-
-    let dist_dur = server_start.elapsed().as_millis();
-    let cmp = EncComparator::new(params, server.clone());
-    let sorter = BatcherSort::new_k(k, cmp, false);
-    sorter.sort(&mut distances_labels);
-    let server_dur = server_start.elapsed().as_millis();
-    let comparisons = sorter.comparisons();
-
-    let decrypted_k: Vec<_> = distances_labels[..k]
-        .iter()
-        .map(|ct| ct.decrypt(&client.key))
-        .collect();
-
-    let first_noise = client.lwe_noise(&distances_labels[0].value, decrypted_k[0].0);
-    (decrypted_k, dist_dur, server_dur, comparisons, first_noise)
-}
-
-fn simulate_new(
-    params: Parameters,
-    client: &mut KnnClient,
     server: Arc<RwLock<KnnServer>>,
     k: usize,
     target: &[u64],
     verbose: bool,
+    network_type: NetworkType,
 ) -> (Vec<(u64, u64)>, u128, u128, usize, f64) {
     let (glwe, lwe) = client.make_query(target);
 
@@ -261,16 +218,29 @@ fn simulate_new(
         println!("[DEBUG] decrypted_distances_top10={distances:?}");
     }
 
-    let mut d: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data"].iter().collect();
-    d.push(format!("network-{}-{}.csv", distances_labels.len(), k));
-    let network = load_network(&d).unwrap();
-    let cmp = AsyncEncComparator::new(server, params);
+    let (dist_dur, server_dur, comparisons) = match network_type {
+        NetworkType::Normal => {
+            let cmp = AsyncEncComparator::new_with_counter(server.clone(), params);
+            let sorter = BatcherSort::par_new_k(k, cmp, false);
+            let dist_dur = server_start.elapsed().as_millis();
+            sorter.par_sort(&distances_labels);
+            let server_dur = server_start.elapsed().as_millis();
+            (dist_dur, server_dur, sorter.par_comparisons())
+        }
+        NetworkType::File => {
+            let mut d: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data"].iter().collect();
+            d.push(format!("network-{}-{}.csv", distances_labels.len(), k));
+            // TODO load the network early
+            let network = load_network(&d).unwrap();
+            let cmp = AsyncEncComparator::new(server, params);
 
-    let dist_dur = server_start.elapsed().as_millis();
-    par_run_network_trivial(&network, cmp, &distances_labels);
+            let dist_dur = server_start.elapsed().as_millis();
+            par_run_network_trivial(&network, cmp, &distances_labels);
 
-    let server_dur = server_start.elapsed().as_millis();
-    let comparisons = network.len();
+            let server_dur = server_start.elapsed().as_millis();
+            (dist_dur, server_dur, network.len())
+        }
+    };
 
     let decrypted_k: Vec<_> = distances_labels[..k]
         .iter()
@@ -352,6 +322,7 @@ fn main() {
                 cli.k,
                 &target,
                 cli.verbose,
+                cli.network_type,
             );
             let actual_labels: Vec<_> = actual_full.iter().map(|(_, b)| *b).collect();
             let actual_maj = clear_knn::majority(&actual_labels);
