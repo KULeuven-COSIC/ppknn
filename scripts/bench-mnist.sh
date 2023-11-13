@@ -29,6 +29,7 @@ for K in $KS; do
         --test-size 200 \
         --repetitions 1 \
         --best-model \
+        --network-type=file \
         -k "$K" \
         --initial-modulus "$INITIAL_MODULUS" \
         --quantize-type "$QUANTIZE_TYPE" \
