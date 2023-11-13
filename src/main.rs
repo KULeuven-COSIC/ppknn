@@ -335,25 +335,27 @@ fn main() {
             if cli.csv {
                 println!(
                     "{rep},{},{},{},{},{dist_dur},{total_dur},{comparisons},{noise:.2},\
-                    {actual_maj},{clear_maj},{expected},{},{}",
+                    {actual_maj},{clear_maj},{expected},{},{},{}",
                     cli.k,
                     cli.model_size,
                     cli.test_size,
                     cli.quantize_type,
                     (clear_maj == expected) as u8,
-                    (actual_maj == expected) as u8
+                    (actual_maj == expected) as u8,
+                    rayon::current_num_threads()
                 );
             } else {
                 println!(
                     "rep={rep}, k={}, model_size={}, test_size={}, quantize_type={}, \
                     dist_dur={dist_dur}ms, total_dur={total_dur}ms, comparisons={comparisons}, noise={noise:.2}, \
-                    actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}",
+                    actual_maj={actual_maj}, clear_maj={clear_maj}, expected={expected}, clear_ok={}, enc_ok={}, threads={}",
                     cli.k,
                     cli.model_size,
                     cli.test_size,
                     cli.quantize_type,
                     (clear_maj==expected) as u8,
-                    (actual_maj==expected) as u8
+                    (actual_maj==expected) as u8,
+                    rayon::current_num_threads()
                 );
             }
 
