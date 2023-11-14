@@ -12,7 +12,7 @@ quantize_type = df.quantize_type.mode()[0]
 df = df[df['quantize_type'] == quantize_type]
 # df = df.groupby(['k', 'model_size'])['total_dur', 'clear_ok', 'enc_ok'].mean()
 df['total_dur'] = df['total_dur'].div(1000)
-df = df.groupby(['k', 'model_size']).agg(dur_mean=('total_dur', 'mean'), \
+df = df.groupby(['k', 'model_size', 'threads']).agg(dur_mean=('total_dur', 'mean'), \
             clear_rate=('clear_ok', 'mean'), \
             enc_rate=('enc_ok', 'mean'), \
             count=('enc_ok', 'count'))
