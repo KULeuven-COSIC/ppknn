@@ -259,7 +259,7 @@ fn main() {
     if cli.print_header {
         println!(
             "rep,k,model_size,test_size,quantize_type,dist_dur,total_dur,comparisons,noise,\
-                    actual_maj,clear_maj,expected,clear_ok,enc_ok"
+                    actual_maj,clear_maj,expected,clear_ok,enc_ok,threads"
         );
         return;
     }
