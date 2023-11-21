@@ -9,11 +9,12 @@ def compute_chunk_size(d, k):
     return (d // 2) + (d % 2) if d <= mu else mu * ceil(d / (2 * mu))
 
 # Count the number of comparators in a merge step
-# The parameter nb_unsorted indicates how many wires can be unsorted at the beginning of the output
-def count_merge_comparators(d1, d2, k, nb_unsorted=0):
-    nb_unsorted = max(min(nb_unsorted, k, d1 + d2), 1)
+def count_merge_comparators(d1, d2, k, sorted=True):
     d1 = min(d1, k)
     d2 = min(d2, k)
+    if not sorted:
+        return max(d1 + d2 - k, 0)
+
     if d1 * d2 == 0:
         return 0
     elif d1 * d2 == 1:
@@ -21,23 +22,29 @@ def count_merge_comparators(d1, d2, k, nb_unsorted=0):
     else:
         size_v = min((d1 // 2) + (d1 % 2) + (d2 // 2) + (d2 % 2), (k // 2) + 1)
         size_w = min((d1 // 2) + (d2 // 2), k // 2)
-        return count_merge_comparators((d1 // 2) + (d1 % 2), (d2 // 2) + (d2 % 2), (k // 2) + 1,
-                                       (nb_unsorted + 1) // 2) +\
-               count_merge_comparators(d1 // 2, d2 // 2, k // 2, ((nb_unsorted - 1) // 2)) +\
-               ((size_v + size_w - 1) // 2) - ((nb_unsorted - 1) // 2)
+        return count_merge_comparators((d1 // 2) + (d1 % 2), (d2 // 2) + (d2 % 2), (k // 2) + 1) + \
+            count_merge_comparators(d1 // 2, d2 // 2, k // 2) + \
+            ((size_v + size_w - 1) // 2)
 
 # Count number of comparators in our method
 def count_our_comparators(d, k, sorted=False):
-    if d <= 1:
+    if d <= 1 or k <= 0:
         return 0
+    elif k > d / 2 and (not sorted):
+        return count_our_comparators(d, d - k, sorted)
     else:
         chunk_size = compute_chunk_size(d, k)
-        return count_our_comparators(chunk_size, k, True) + count_our_comparators(d - chunk_size, k, True) +\
-               count_merge_comparators(chunk_size, d - chunk_size, k, 0 if sorted else k)
+        return count_our_comparators(chunk_size, k, True) + count_our_comparators(d - chunk_size, k, True) + \
+            count_merge_comparators(chunk_size, d - chunk_size, k, sorted)
 
 # Count the number of comparators in the tournament method
 def count_tournament_comparators(d, k):
-    return (((2 * d) - k - 1) * k) // 2
+    if d <= 1 or k <= 0:
+        return 0
+    elif k > d / 2:
+        return count_tournament_comparators(d, d - k)
+    else:
+        return (((2 * d) - k - 1) * k) // 2
 
 # Count number of comparators in Yao's method
 def count_yao_comparators(d, k):
@@ -50,8 +57,8 @@ def count_yao_comparators(d, k):
     elif k > d / 2:
         return count_yao_comparators(d, d - k)
     else:
-        return count_yao_comparators(d // 2, k // 2) +\
-               count_yao_comparators((d // 2) + (d % 2) + (k // 2), k) + (d // 2)
+        return count_yao_comparators(d // 2, k // 2) + \
+            count_yao_comparators((d // 2) + (d % 2) + (k // 2), k) + (d // 2)
 
 # Count the number of comparators in the best method
 def count_best_comparators(d, k, best_solutions):
@@ -69,9 +76,9 @@ def count_best_comparators(d, k, best_solutions):
     else:
         # Our method
         chunk_size = compute_chunk_size(d, k)
-        nb1 = count_our_comparators(chunk_size, k, True) +\
-              count_our_comparators(d - chunk_size, k, True) +\
-              count_merge_comparators(chunk_size, d - chunk_size, k, k)
+        nb1 = count_our_comparators(chunk_size, k, True) + \
+              count_our_comparators(d - chunk_size, k, True) + \
+              count_merge_comparators(chunk_size, d - chunk_size, k, False)
 
         # Tournament method
         nb2 = (d - 1) + count_best_comparators(d - 1, k - 1, best_solutions)
@@ -82,7 +89,7 @@ def count_best_comparators(d, k, best_solutions):
         elif k == 2:
             nb3 = 2 * d - 4
         else:
-            nb3 = count_best_comparators(d // 2, k // 2, best_solutions) +\
+            nb3 = count_best_comparators(d // 2, k // 2, best_solutions) + \
                   count_best_comparators((d // 2) + (d % 2) + (k // 2), k, best_solutions) + (d // 2)
 
         best_solutions[(d, k)] = min(nb1, nb2, nb3)
@@ -96,28 +103,34 @@ def print_comparator(file, wire1, wire2):
     file.write(str(min(wire1, wire2)) + ", " + str(max(wire1, wire2)) + "\n")
 
 # Print one merge step of our method to the given file
-# The extended set of wires [wires1, wires2] should be sorted (and neither will be modified)
-# The parameter nb_unsorted indicates how many wires can be unsorted at the beginning of the output
-def print_merge_comparators(file, wires1, wires2, k, nb_unsorted=0):
-    nb_unsorted = max(min(nb_unsorted, k, len(wires1) + len(wires2)), 1)
+# The extended set of wire labels [wires1, wires2] should be sorted (the values of the wires can be unsorted)
+# Neither wires1 nor wires2 will be modified
+def print_merge_comparators(file, wires1, wires2, k, sorted=True):
     wires1 = [wires1[index] for index in range(min(len(wires1), k))]
     wires2 = [wires2[index] for index in range(min(len(wires2), k))]
-    if len(wires1) == 0 or len(wires2) == 0:
-        return
-    elif len(wires1) == 1 and len(wires2) == 1:
-        print_comparator(file, wires1[0], wires2[0])
+    if sorted:
+        if len(wires1) == 0 or len(wires2) == 0:
+            return
+        elif len(wires1) == 1 and len(wires2) == 1:
+            print_comparator(file, wires1[0], wires2[0])
+        else:
+            wires1_even = [wires1[2 * index] for index in range((len(wires1) // 2) + (len(wires1) % 2))]
+            wires1_odd = [wires1[2 * index + 1] for index in range(len(wires1) // 2)]
+            wires2_even = [wires2[2 * index] for index in range((len(wires2) // 2) + (len(wires2) % 2))]
+            wires2_odd = [wires2[2 * index + 1] for index in range(len(wires2) // 2)]
+            print_merge_comparators(file, wires1_even, wires2_even, (k // 2) + 1)
+            print_merge_comparators(file, wires1_odd, wires2_odd, k // 2)
+            wires = wires1 + wires2
+            size_v = min((len(wires1) // 2) + (len(wires1) % 2) + (len(wires2) // 2) + (len(wires2) % 2), (k // 2) + 1)
+            size_w = min((len(wires1) // 2) + (len(wires2) // 2), k // 2)
+            for index in range((size_v + size_w - 1) // 2):
+                print_comparator(file, wires[2 * index + 1], wires[2 * (index + 1)])
     else:
-        wires1_even = [wires1[2 * index] for index in range((len(wires1) // 2) + (len(wires1) % 2))]
-        wires1_odd = [wires1[2 * index + 1] for index in range(len(wires1) // 2)]
-        wires2_even = [wires2[2 * index] for index in range((len(wires2) // 2) + (len(wires2) % 2))]
-        wires2_odd = [wires2[2 * index + 1] for index in range(len(wires2) // 2)]
-        recursive_size = min(len(wires1_even) + len(wires2_even), (k // 2) + 1) + \
-                         min(len(wires1_odd) + len(wires2_odd), k // 2)
-        print_merge_comparators(file, wires1_even, wires2_even, (k // 2) + 1, (nb_unsorted + 1) // 2)
-        print_merge_comparators(file, wires1_odd, wires2_odd, k // 2, ((nb_unsorted - 1) // 2))
-        wires = wires1 + wires2
-        for index in range(((nb_unsorted - 1) // 2), (recursive_size - 1) // 2):
-            print_comparator(file, wires[2 * index + 1], wires[2 * (index + 1)])
+        nb_comparators = max(len(wires1) + len(wires2) - k, 0)
+        wires1 = wires1[len(wires1) - nb_comparators:len(wires1)]
+        wires2 = wires2[len(wires2) - nb_comparators:len(wires2)]
+        for index in range(len(wires1)):
+            print_comparator(file, wires1[index], wires2[len(wires2) - index - 1])
 
 # Print one step of the tournament method to the given file
 # The given set of wires should be sorted (and it won't be modified)
@@ -151,14 +164,13 @@ def print_network(file, d, k, best_solutions, method="BEST", sorted=False, wires
     if d <= 1 or k <= 0:
         return
     elif k > d / 2 and (not sorted):
-        print_network(file, d, d - k, best_solutions, method, sorted,
-                      [wires[d - index - 1] for index in range(d)])
+        print_network(file, d, d - k, best_solutions, method, sorted, [wires[d - index - 1] for index in range(d)])
     else:
         # Our method
         chunk_size = compute_chunk_size(d, k)
-        nb1 = count_our_comparators(chunk_size, k, True) +\
-              count_our_comparators(d - chunk_size, k, True) +\
-              count_merge_comparators(chunk_size, d - chunk_size, k, k)
+        nb1 = count_our_comparators(chunk_size, k, True) + \
+              count_our_comparators(d - chunk_size, k, True) + \
+              count_merge_comparators(chunk_size, d - chunk_size, k, False)
 
         # Tournament method
         nb2 = (d - 1) + count_best_comparators(d - 1, k - 1, best_solutions)
@@ -169,7 +181,7 @@ def print_network(file, d, k, best_solutions, method="BEST", sorted=False, wires
         elif k == 2:
             nb3 = 2 * d - 4
         else:
-            nb3 = count_best_comparators(d // 2, k // 2, best_solutions) +\
+            nb3 = count_best_comparators(d // 2, k // 2, best_solutions) + \
                   count_best_comparators((d // 2) + (d % 2) + (k // 2), k, best_solutions) + (d // 2)
 
         # Check which method we will use
@@ -178,13 +190,14 @@ def print_network(file, d, k, best_solutions, method="BEST", sorted=False, wires
             wires2 = [wires[chunk_size + index] for index in range(d - chunk_size)]
             print_network(file, chunk_size, k, best_solutions, "OUR", True, wires1)
             print_network(file, d - chunk_size, k, best_solutions, "OUR", True, wires2)
-            print_merge_comparators(file, wires1, wires2, k, 0 if sorted else k)
+            print_merge_comparators(file, wires1, wires2, k, sorted)
         elif method == "TOURNAMENT" or (method == "BEST" and nb2 == min(nb1, nb2, nb3)):
             print_tournament_comparators(file, wires)
             print_network(file, d - 1, k - 1, best_solutions, method, sorted,
                           [wires[index + 1] for index in range(d - 1)])
         else:
             if k == 1:
+                # Tournament
                 print_tournament_comparators(file, wires)
             elif k == 2:
                 # Tournament without first wire
@@ -204,19 +217,19 @@ def print_network(file, d, k, best_solutions, method="BEST", sorted=False, wires
                 print_network(file, (d // 2) + (d % 2) + (k // 2), k, best_solutions, method, sorted, wires2)
 
 
+if __name__ == "__main__":
+    # Some tests to find out which method is the best
+    d = 1000
+    k = 50
+    if len(sys.argv) > 1:
+        d = int(sys.argv[1])
+        k = int(sys.argv[2])
+    print("Yao's method:", count_yao_comparators(d, k))
+    print("Our method:", count_our_comparators(d, k))
+    print("Tournament method:", count_tournament_comparators(d, k))
 
-# Some tests to find out which method is the best
-d = 1000
-k = 50
-if len(sys.argv) > 1:
-    d = int(sys.argv[1])
-    k = int(sys.argv[2])
-print("Yao's method:", count_yao_comparators(d, k))
-print("Our method:", count_our_comparators(d, k))
-print("Tournament method:", count_tournament_comparators(d, k))
+    best_solutions = dict()
+    print("Best method:", count_best_comparators(d, k, best_solutions))
 
-best_solutions = dict()
-print("Best method:", count_best_comparators(d, k, best_solutions))
-
-with open("../data/network-{}-{}.csv".format(d, k), "w") as file:
-    print_network(file, d, k, best_solutions)
+    with open("../data/network-{}-{}.csv".format(d, k), "w") as file:
+        print_network(file, d, k, best_solutions)
